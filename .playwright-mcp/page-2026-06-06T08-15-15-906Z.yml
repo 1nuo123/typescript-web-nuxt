@@ -1,0 +1,90 @@
+- generic [ref=e3]:
+  - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e8]: 导航
+      - navigation "次级导航" [ref=e9]:
+        - link "首页" [ref=e10] [cursor=pointer]:
+          - /url: /
+        - link "后台总览" [ref=e11] [cursor=pointer]:
+          - /url: /admin
+        - link "身份管理" [ref=e12] [cursor=pointer]:
+          - /url: /admin/identity
+        - link "业务审计" [ref=e13] [cursor=pointer]:
+          - /url: /admin/audit
+        - link "运维控制面" [ref=e14] [cursor=pointer]:
+          - /url: /admin/ops
+  - generic [ref=e15]:
+    - banner [ref=e16]:
+      - link "应用骨架" [ref=e18] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e20]: 应用骨架
+      - navigation "主导航" [ref=e21]:
+        - link "首页" [ref=e22] [cursor=pointer]:
+          - /url: /
+        - link "后台总览" [ref=e23] [cursor=pointer]:
+          - /url: /admin
+        - link "身份管理" [ref=e24] [cursor=pointer]:
+          - /url: /admin/identity
+        - link "业务审计" [ref=e25] [cursor=pointer]:
+          - /url: /admin/audit
+        - link "运维控制面" [ref=e26] [cursor=pointer]:
+          - /url: /admin/ops
+      - group "主题" [ref=e28]:
+        - button "跟随系统主题" [pressed] [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]:
+            - img [ref=e31]
+            - generic [ref=e33]: 跟随系统主题
+        - button "浅色主题" [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]:
+            - img [ref=e36]
+            - generic [ref=e42]: 浅色主题
+        - button "深色主题" [ref=e43] [cursor=pointer]:
+          - generic [ref=e44]:
+            - img [ref=e45]
+            - generic [ref=e47]: 深色主题
+    - main [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e51]:
+          - paragraph [ref=e52]: 业务后台
+          - heading "业务审计" [level=1] [ref=e53]
+          - paragraph [ref=e54]: 审计查询使用后端 offset 分页，空过滤项不会发送到接口。
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - heading "过滤" [level=2] [ref=e57]
+            - generic [ref=e58]:
+              - generic [ref=e59]:
+                - generic [ref=e60]: 操作人主体
+                - textbox "操作人主体" [ref=e62]:
+                  - /placeholder: ""
+              - generic [ref=e63]:
+                - generic [ref=e64]: 动作
+                - textbox "动作" [ref=e66]:
+                  - /placeholder: ""
+              - generic [ref=e67]:
+                - generic [ref=e68]: 目标类型
+                - textbox "目标类型" [ref=e70]:
+                  - /placeholder: ""
+              - generic [ref=e71]:
+                - generic [ref=e72]: 目标标识
+                - textbox "目标标识" [ref=e74]:
+                  - /placeholder: ""
+              - textbox "开始时间" [ref=e75]
+              - textbox "结束时间" [ref=e76]
+              - button "查询" [ref=e77] [cursor=pointer]:
+                - generic [ref=e78]: 查询
+          - generic [ref=e79]:
+            - heading "审计事件" [level=2] [ref=e80]
+            - table [ref=e82]:
+              - rowgroup [ref=e83]:
+                - row "时间 动作 操作人 目标 结果 摘要" [ref=e84]:
+                  - columnheader "时间" [ref=e85]
+                  - columnheader "动作" [ref=e86]
+                  - columnheader "操作人" [ref=e87]
+                  - columnheader "目标" [ref=e88]
+                  - columnheader "结果" [ref=e89]
+                  - columnheader "摘要" [ref=e90]
+              - rowgroup [ref=e91]:
+                - row "暂无审计事件" [ref=e92]:
+                  - cell "暂无审计事件" [ref=e93]

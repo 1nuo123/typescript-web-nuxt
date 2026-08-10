@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "kc-mcp": {
+      "command": "D:/Node/node.exe",
+      "args": [
+        "C:/Users/ThinkPad/.cursor/kc-mcp/mcp-server.cjs",
+        "--queue-root=C:/Users/ThinkPad/.cursor/kc-mcp-messages",
+        "--workspace=e:/python_web_fastapi/typescript-web-nuxt"
+      ],
+      "env": {
+        "KC_POLL_TICK_MS": "200000"
+      }
+    }
+  }
+}

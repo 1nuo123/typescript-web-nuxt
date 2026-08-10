@@ -1,0 +1,119 @@
+- generic [ref=e1]:
+    - generic [ref=e2]:
+        - status [ref=e118]: Foundation | Nuxt App Skeleton
+        - generic [ref=e3]:
+            - link "Skip to content" [ref=e4] [cursor=pointer]:
+                - /url: '#main-content'
+            - complementary [ref=e5]:
+                - generic [ref=e6]:
+                    - generic [ref=e7]:
+                        - generic [ref=e8]: Navigation
+                        - button "Close" [ref=e137] [cursor=pointer]:
+                            - generic [ref=e138]: Close
+                    - navigation "Secondary" [ref=e9]:
+                        - paragraph [ref=e10]: Navigation slots are ready for feature modules.
+                - button "Close navigation" [ref=e139] [cursor=pointer]
+            - generic [ref=e11]:
+                - banner [ref=e12]:
+                    - generic [ref=e13]:
+                        - button "Open navigation" [expanded] [active] [ref=e133] [cursor=pointer]
+                        - link "Nuxt App Skeleton" [ref=e14] [cursor=pointer]:
+                            - /url: /
+                            - generic [ref=e16]: Nuxt App Skeleton
+                    - group "Theme" [ref=e18]:
+                        - button "Auto" [ref=e19] [cursor=pointer]:
+                            - generic [ref=e20]: Auto
+                        - button "Light" [ref=e21] [cursor=pointer]:
+                            - generic [ref=e22]: Light
+                        - button "Dark" [ref=e23] [cursor=pointer]:
+                            - generic [ref=e24]: Dark
+                - main [ref=e25]:
+                    - generic [ref=e26]:
+                        - generic [ref=e28]:
+                            - paragraph [ref=e29]: Nuxt 4
+                            - heading "Application Skeleton" [level=1] [ref=e30]
+                            - paragraph [ref=e31]: A neutral foundation for layout, state, requests, errors, styling, and tests.
+                        - generic [ref=e32]:
+                            - region "Skeleton layers" [ref=e33]:
+                                - article [ref=e34]:
+                                    - generic [ref=e36]:
+                                        - paragraph [ref=e37]: Configuration
+                                        - paragraph [ref=e38]: Nuxt config and runtime config
+                                - article [ref=e39]:
+                                    - generic [ref=e41]:
+                                        - paragraph [ref=e42]: Layouts
+                                        - paragraph [ref=e43]: Default, empty, and error shells
+                                - article [ref=e44]:
+                                    - generic [ref=e46]:
+                                        - paragraph [ref=e47]: Requests
+                                        - paragraph [ref=e48]: Typed client and normalized errors
+                                - article [ref=e49]:
+                                    - generic [ref=e51]:
+                                        - paragraph [ref=e52]: State
+                                        - paragraph [ref=e53]: Application-level Pinia store
+                                - article [ref=e54]:
+                                    - generic [ref=e56]:
+                                        - paragraph [ref=e57]: Errors
+                                        - paragraph [ref=e58]: Page, runtime, and request boundaries
+                                - article [ref=e59]:
+                                    - generic [ref=e61]:
+                                        - paragraph [ref=e62]: Tests
+                                        - paragraph [ref=e63]: Unit, Nuxt, e2e, and build gates
+                            - generic [ref=e64]:
+                                - generic [ref=e65]:
+                                    - generic [ref=e66]:
+                                        - heading "Interface Primitives" [level=2] [ref=e67]
+                                        - paragraph [ref=e68]: Shared components expose typed props and isolated interaction states.
+                                    - status [ref=e69]:
+                                        - generic [ref=e71]: Ready
+                                - generic [ref=e72]:
+                                    - generic [ref=e73]:
+                                        - generic [ref=e74]: Input
+                                        - textbox "Input Neutral control state" [ref=e76]:
+                                            - /placeholder: Placeholder
+                                        - generic [ref=e77]: Neutral control state
+                                    - status [ref=e78]:
+                                        - generic [ref=e80]:
+                                            - paragraph [ref=e81]: Alert
+                                            - paragraph [ref=e82]: Generic feedback surface
+                                    - generic "Button variants" [ref=e83]:
+                                        - button "Primary" [ref=e84] [cursor=pointer]:
+                                            - generic [ref=e85]: Primary
+                                        - button "Secondary" [ref=e86] [cursor=pointer]:
+                                            - generic [ref=e87]: Secondary
+                                        - button "Ghost" [ref=e88] [cursor=pointer]:
+                                            - generic [ref=e89]: Ghost
+                                        - button "Danger" [ref=e90] [cursor=pointer]:
+                                            - generic [ref=e91]: Danger
+                                        - button "Loading" [disabled] [ref=e92]:
+                                            - status [ref=e93]:
+                                                - generic [ref=e95]: Loading
+                                            - generic [ref=e96]: Loading
+                                    - generic "Skeleton preview" [ref=e97]
+                            - region "Runtime contract" [ref=e101]:
+                                - generic [ref=e102]:
+                                    - heading "Runtime Contract" [level=2] [ref=e103]
+                                    - paragraph [ref=e104]: Public values are read from Nuxt runtime config.
+                                - generic [ref=e105]:
+                                    - generic [ref=e106]:
+                                        - term [ref=e107]: App name
+                                        - definition [ref=e108]: Nuxt App Skeleton
+                                    - generic [ref=e109]:
+                                        - term [ref=e110]: API base URL
+                                        - definition [ref=e111]: Not configured
+                                    - generic [ref=e112]:
+                                        - term [ref=e113]: API timeout
+                                        - definition [ref=e114]: 10000 ms
+                                    - generic [ref=e115]:
+                                        - term [ref=e116]: Captured logs
+                                        - definition [ref=e117]: '0'
+    - generic:
+        - img
+    - generic [ref=e119]:
+        - button "Toggle Nuxt DevTools" [ref=e120] [cursor=pointer]:
+            - img [ref=e121]
+        - generic "Page load time" [ref=e124]:
+            - generic [ref=e125]: '82'
+            - generic [ref=e126]: ms
+        - button "Toggle Component Inspector" [ref=e128] [cursor=pointer]:
+            - img [ref=e129]

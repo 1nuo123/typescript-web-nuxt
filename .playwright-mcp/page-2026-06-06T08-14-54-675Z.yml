@@ -1,0 +1,104 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+      - /url: "#main-content"
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e8]: 导航
+        - navigation "次级导航" [ref=e9]:
+          - link "首页" [ref=e10] [cursor=pointer]:
+            - /url: /
+          - link "后台总览" [ref=e11] [cursor=pointer]:
+            - /url: /admin
+          - link "身份管理" [ref=e12] [cursor=pointer]:
+            - /url: /admin/identity
+          - link "业务审计" [ref=e13] [cursor=pointer]:
+            - /url: /admin/audit
+          - link "运维控制面" [ref=e14] [cursor=pointer]:
+            - /url: /admin/ops
+    - generic [ref=e15]:
+      - banner [ref=e16]:
+        - link "应用骨架" [ref=e18] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e20]: 应用骨架
+        - navigation "主导航" [ref=e21]:
+          - link "首页" [ref=e22] [cursor=pointer]:
+            - /url: /
+          - link "后台总览" [ref=e23] [cursor=pointer]:
+            - /url: /admin
+          - link "身份管理" [ref=e24] [cursor=pointer]:
+            - /url: /admin/identity
+          - link "业务审计" [ref=e25] [cursor=pointer]:
+            - /url: /admin/audit
+          - link "运维控制面" [ref=e26] [cursor=pointer]:
+            - /url: /admin/ops
+        - group "主题" [ref=e28]:
+          - button "跟随系统主题" [pressed] [ref=e29] [cursor=pointer]:
+            - generic [ref=e30]:
+              - img [ref=e31]
+              - generic [ref=e33]: 跟随系统主题
+          - button "浅色主题" [ref=e34] [cursor=pointer]:
+            - generic [ref=e35]:
+              - img [ref=e36]
+              - generic [ref=e42]: 浅色主题
+          - button "深色主题" [ref=e43] [cursor=pointer]:
+            - generic [ref=e44]:
+              - img [ref=e45]
+              - generic [ref=e47]: 深色主题
+      - main [ref=e48]:
+        - generic [ref=e49]:
+          - generic [ref=e51]:
+            - paragraph [ref=e52]: 身份管理
+            - heading "Scope 管理" [level=1] [ref=e53]
+            - paragraph [ref=e54]: Scope 作为后台接口权限最小单元，读写均对齐后端身份契约。
+          - generic [ref=e55]:
+            - generic [ref=e56]:
+              - heading "查询" [level=2] [ref=e57]
+              - generic [ref=e58]:
+                - generic [ref=e59]:
+                  - generic [ref=e60]: 关键字
+                  - textbox "关键字" [ref=e62]:
+                    - /placeholder: ""
+                - combobox "启用状态" [ref=e63]:
+                  - option "全部状态" [selected]
+                  - option "启用"
+                  - option "停用"
+                - button "查询" [ref=e64] [cursor=pointer]:
+                  - generic [ref=e65]: 查询
+            - generic [ref=e66]:
+              - heading "保存 scope" [level=2] [ref=e67]
+              - generic [ref=e68]:
+                - generic [ref=e69]:
+                  - generic [ref=e70]: scope code
+                  - textbox "scope code" [ref=e72]:
+                    - /placeholder: ""
+                - generic [ref=e73]:
+                  - generic [ref=e74]: scope 名称
+                  - textbox "scope 名称" [ref=e76]:
+                    - /placeholder: ""
+                - generic [ref=e77]:
+                  - generic [ref=e78]: 描述
+                  - textbox "描述" [ref=e80]:
+                    - /placeholder: ""
+                - combobox "启用状态" [ref=e81]:
+                  - option "启用" [selected]
+                  - option "停用"
+                - button "创建" [ref=e82] [cursor=pointer]:
+                  - generic [ref=e83]: 创建
+                - button "更新" [ref=e84] [cursor=pointer]:
+                  - generic [ref=e85]: 更新
+            - generic [ref=e86]:
+              - heading "Scope 列表" [level=2] [ref=e87]
+              - table [ref=e89]:
+                - rowgroup [ref=e90]:
+                  - row "Code 名称 状态 类型 操作" [ref=e91]:
+                    - columnheader "Code" [ref=e92]
+                    - columnheader "名称" [ref=e93]
+                    - columnheader "状态" [ref=e94]
+                    - columnheader "类型" [ref=e95]
+                    - columnheader "操作" [ref=e96]
+                - rowgroup [ref=e97]:
+                  - row "暂无 scope 记录" [ref=e98]:
+                    - cell "暂无 scope 记录" [ref=e99]
+  - generic:
+    - img

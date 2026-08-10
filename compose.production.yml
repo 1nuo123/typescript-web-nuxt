@@ -1,0 +1,12 @@
+services:
+  frontend:
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512m
+          pids: 256
+        reservations:
+          cpus: '0.10'
+          memory: 128m

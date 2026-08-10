@@ -1,0 +1,250 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "500" [level=1] [ref=e3]
+    - heading "undefined" [level=2] [ref=e4]
+    - paragraph [ref=e5]: Cannot stringify arbitrary non-POJOs
+  - status [ref=e6]
+  - iframe [ref=e7]:
+    - generic [ref=f3e2]:
+      - banner [ref=f3e3]:
+        - generic [ref=f3e5]:
+          - checkbox [ref=f3e6]
+          - generic "Light mode" [ref=f3e8] [cursor=pointer]:
+            - img [ref=f3e9]
+      - generic [ref=f3e13]:
+        - heading "Error" [level=4] [ref=f3e14]
+        - heading "An error has occurred" [level=1] [ref=f3e15]
+      - heading "Cannot stringify arbitrary non-POJOs Copy error with stack trace to clipboard" [level=2] [ref=f3e19]:
+        - img [ref=f3e21]
+        - generic [ref=f3e23]: Cannot stringify arbitrary non-POJOs
+        - button "Copy error with stack trace to clipboard" [ref=f3e24] [cursor=pointer]:
+          - img [ref=f3e25]
+      - generic [ref=f3e30]:
+        - heading "Stack Trace" [level=3] [ref=f3e33]
+        - generic [ref=f3e35]:
+          - generic [ref=f3e36]:
+            - generic [ref=f3e38]:
+              - checkbox "View All Frames" [ref=f3e39]
+              - generic [ref=f3e40]: View All Frames
+            - generic [ref=f3e42]:
+              - button "Pretty" [ref=f3e43]
+              - button "Raw" [ref=f3e44]
+          - list [ref=f3e47]:
+            - listitem [ref=f3e48]:
+              - generic [ref=f3e49]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 330:13" [ref=f3e50]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e51] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:330
+                  - generic [ref=f3e52]:
+                    - text: in
+                    - code [ref=f3e53]: flatten
+                  - generic [ref=f3e54]:
+                    - text: at line
+                    - code [ref=f3e55]: 330:13
+                - button [ref=f3e57]:
+                  - img [ref=f3e58]
+            - listitem [ref=f3e60]:
+              - generic [ref=f3e61]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 370:43" [ref=f3e62]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e63] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:370
+                  - generic [ref=f3e64]:
+                    - text: in
+                    - code [ref=f3e65]: flatten
+                  - generic [ref=f3e66]:
+                    - text: at line
+                    - code [ref=f3e67]: 370:43
+                - button [ref=f3e69]:
+                  - img [ref=f3e70]
+            - listitem [ref=f3e72]:
+              - generic [ref=f3e73]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 370:43" [ref=f3e74]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e75] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:370
+                  - generic [ref=f3e76]:
+                    - text: in
+                    - code [ref=f3e77]: flatten
+                  - generic [ref=f3e78]:
+                    - text: at line
+                    - code [ref=f3e79]: 370:43
+                - button [ref=f3e81]:
+                  - img [ref=f3e82]
+            - listitem [ref=f3e84]:
+              - generic [ref=f3e85]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 370:43" [ref=f3e86]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e87] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:370
+                  - generic [ref=f3e88]:
+                    - text: in
+                    - code [ref=f3e89]: flatten
+                  - generic [ref=f3e90]:
+                    - text: at line
+                    - code [ref=f3e91]: 370:43
+                - button [ref=f3e93]:
+                  - img [ref=f3e94]
+            - listitem [ref=f3e96]:
+              - generic [ref=f3e97]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 114:39" [ref=f3e98]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e99] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:114
+                  - generic [ref=f3e100]:
+                    - text: in
+                    - code [ref=f3e101]: flatten
+                  - generic [ref=f3e102]:
+                    - text: at line
+                    - code [ref=f3e103]: 114:39
+                - button [ref=f3e105]:
+                  - img [ref=f3e106]
+            - listitem [ref=f3e108]:
+              - generic [ref=f3e109]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 370:43" [ref=f3e110]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e111] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:370
+                  - generic [ref=f3e112]:
+                    - text: in
+                    - code [ref=f3e113]: flatten
+                  - generic [ref=f3e114]:
+                    - text: at line
+                    - code [ref=f3e115]: 370:43
+                - button [ref=f3e117]:
+                  - img [ref=f3e118]
+            - listitem [ref=f3e120]:
+              - generic [ref=f3e121]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in flatten at line 114:39" [ref=f3e122]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e123] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:114
+                  - generic [ref=f3e124]:
+                    - text: in
+                    - code [ref=f3e125]: flatten
+                  - generic [ref=f3e126]:
+                    - text: at line
+                    - code [ref=f3e127]: 114:39
+                - button [ref=f3e129]:
+                  - img [ref=f3e130]
+            - listitem [ref=f3e132]:
+              - generic [ref=f3e133]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in run at line 382:16" [ref=f3e134]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e135] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:382
+                  - generic [ref=f3e136]:
+                    - text: in
+                    - code [ref=f3e137]: run
+                  - generic [ref=f3e138]:
+                    - text: at line
+                    - code [ref=f3e139]: 382:16
+                - button [ref=f3e141]:
+                  - img [ref=f3e142]
+            - listitem [ref=f3e144]:
+              - generic [ref=f3e145]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js in stringify at line 28:22" [ref=f3e146]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js" [ref=f3e147] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/node_modules/.pnpm/devalue@5.8.1/node_modules/devalue/src/stringify.js:28
+                  - generic [ref=f3e148]:
+                    - text: in
+                    - code [ref=f3e149]: stringify
+                  - generic [ref=f3e150]:
+                    - text: at line
+                    - code [ref=f3e151]: 28:22
+                - button [ref=f3e153]:
+                  - img [ref=f3e154]
+            - listitem [ref=f3e156]:
+              - generic [ref=f3e157]:
+                - button "E:/python_web_fastapi/typescript-web-nuxt/.nuxt/dev/index.mjs in renderPayloadJsonScript at line 3320:52" [ref=f3e158]:
+                  - link "E:/python_web_fastapi/typescript-web-nuxt/.nuxt/dev/index.mjs" [ref=f3e159] [cursor=pointer]:
+                    - /url: vscode://file/E:/python_web_fastapi/typescript-web-nuxt/.nuxt/dev/index.mjs:3320
+                  - generic [ref=f3e160]:
+                    - text: in
+                    - code [ref=f3e161]: renderPayloadJsonScript
+                  - generic [ref=f3e162]:
+                    - text: at line
+                    - code [ref=f3e163]: 3320:52
+                - generic [ref=f3e164]:
+                  - generic [ref=f3e165]: In App
+                  - button [ref=f3e166]:
+                    - img [ref=f3e167]
+              - code [ref=f3e171]:
+                - generic [ref=f3e185]: "\"x-powered-by\": \"Nuxt\" } }; } function renderPayloadJsonScript(opts) { const contents = opts.data ? encodeForwardSlashes(stringify(opts.data, opts.ssrContext[\"~payloadReducers\"])) : \"\"; const payload = { \"type\": \"application/json\", \"innerHTML\": contents, \"data-nuxt-data\": appId, \"data-ssr\": !(opts.ssrContext.noSSR)"
+      - generic [ref=f3e187]:
+        - heading "Error Cause" [level=3] [ref=f3e190]
+        - code [ref=f3e195]:
+          - generic [ref=f3e196]:
+            - text: "DevalueError {"
+            - button "▼" [ref=f3e197]:
+              - generic [ref=f3e198]: ▼
+            - text: "}"
+      - generic [ref=f3e200]:
+        - heading "Request" [level=3] [ref=f3e202]
+        - generic [ref=f3e203]:
+          - generic [ref=f3e204]:
+            - heading "url" [level=4] [ref=f3e205]
+            - text: http://127.0.0.1:3000/login?redirect=/admin
+          - generic [ref=f3e206]:
+            - heading "method" [level=4] [ref=f3e207]
+            - text: GET
+          - generic [ref=f3e208]:
+            - heading "headers" [level=4] [ref=f3e209]
+            - table [ref=f3e210]:
+              - rowgroup [ref=f3e211]:
+                - row "host 127.0.0.1:3000" [ref=f3e212]:
+                  - cell "host" [ref=f3e213]
+                  - cell "127.0.0.1:3000" [ref=f3e214]
+                - row "connection keep-alive" [ref=f3e215]:
+                  - cell "connection" [ref=f3e216]
+                  - cell "keep-alive" [ref=f3e217]
+                - row "upgrade-insecure-requests 1" [ref=f3e218]:
+                  - cell "upgrade-insecure-requests" [ref=f3e219]
+                  - cell "1" [ref=f3e220]
+                - row "user-agent Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" [ref=f3e221]:
+                  - cell "user-agent" [ref=f3e222]
+                  - cell "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" [ref=f3e223]
+                - row "accept text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7" [ref=f3e224]:
+                  - cell "accept" [ref=f3e225]
+                  - cell "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7" [ref=f3e226]
+                - row "sec-fetch-site none" [ref=f3e227]:
+                  - cell "sec-fetch-site" [ref=f3e228]
+                  - cell "none" [ref=f3e229]
+                - row "sec-fetch-mode navigate" [ref=f3e230]:
+                  - cell "sec-fetch-mode" [ref=f3e231]
+                  - cell "navigate" [ref=f3e232]
+                - row "sec-fetch-user ?1" [ref=f3e233]:
+                  - cell "sec-fetch-user" [ref=f3e234]
+                  - cell "?1" [ref=f3e235]
+                - row "sec-fetch-dest document" [ref=f3e236]:
+                  - cell "sec-fetch-dest" [ref=f3e237]
+                  - cell "document" [ref=f3e238]
+                - row "sec-ch-ua \"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"" [ref=f3e239]:
+                  - cell "sec-ch-ua" [ref=f3e240]
+                  - cell "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"" [ref=f3e241]
+                - row "sec-ch-ua-mobile ?0" [ref=f3e242]:
+                  - cell "sec-ch-ua-mobile" [ref=f3e243]
+                  - cell "?0" [ref=f3e244]
+                - row "sec-ch-ua-platform \"Windows\"" [ref=f3e245]:
+                  - cell "sec-ch-ua-platform" [ref=f3e246]
+                  - cell "\"Windows\"" [ref=f3e247]
+                - row "accept-encoding gzip, deflate, br, zstd" [ref=f3e248]:
+                  - cell "accept-encoding" [ref=f3e249]
+                  - cell "gzip, deflate, br, zstd" [ref=f3e250]
+                - row "accept-language zh-CN,zh;q=0.9" [ref=f3e251]:
+                  - cell "accept-language" [ref=f3e252]
+                  - cell "zh-CN,zh;q=0.9" [ref=f3e253]
+                - 'row "cookie Object { ▼ }" [ref=f3e254]':
+                  - cell "cookie" [ref=f3e255]
+                  - 'cell "Object { ▼ }" [ref=f3e256]':
+                    - code [ref=f3e259]:
+                      - generic [ref=f3e260]:
+                        - text: "Object {"
+                        - button "▼" [ref=f3e261]:
+                          - generic [ref=f3e262]: ▼
+                        - text: "}"
+                - row "x-forwarded-for 127.0.0.1" [ref=f3e263]:
+                  - cell "x-forwarded-for" [ref=f3e264]
+                  - cell "127.0.0.1" [ref=f3e265]
+                - row "x-forwarded-port 3000" [ref=f3e266]:
+                  - cell "x-forwarded-port" [ref=f3e267]
+                  - cell "3000" [ref=f3e268]
+                - row "x-forwarded-proto http" [ref=f3e269]:
+                  - cell "x-forwarded-proto" [ref=f3e270]
+                  - cell "http" [ref=f3e271]
+  - button "Toggle detailed error view Hide error page preview" [expanded] [ref=e8]:
+    - generic [ref=e9]: Toggle detailed error view
+    - button "Hide error page preview" [ref=e10] [cursor=pointer]: ×

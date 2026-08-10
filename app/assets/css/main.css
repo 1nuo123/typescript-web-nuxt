@@ -1,0 +1,269 @@
+@import 'tailwindcss';
+
+/*
+ * 设计令牌:明暗两套原始变量(--ui-*)由 data-theme 切换,
+ * 通过 @theme inline 映射为 Tailwind 工具类可用的语义色。
+ */
+:root {
+  color-scheme: light;
+  --ui-canvas: #fafafa;
+  --ui-elevated: #ffffff;
+  --ui-surface: #ffffff;
+  --ui-surface-muted: #f5f5f5;
+  --ui-ink: #18181b;
+  --ui-ink-muted: #71717a;
+  --ui-line: #e8e8ea;
+  --ui-line-strong: #d4d4d8;
+  --ui-primary: #18181b;
+  --ui-primary-strong: #09090b;
+  --ui-primary-soft: #f1f1f3;
+  --ui-accent: #52525b;
+  --ui-accent-soft: #f1f1f3;
+  --ui-warning: #a75408;
+  --ui-warning-soft: #fff3dc;
+  --ui-danger: #d92d20;
+  --ui-danger-soft: #ffebe8;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --ui-canvas: #111112;
+  --ui-elevated: #18181a;
+  --ui-surface: #1c1c1f;
+  --ui-surface-muted: #27272a;
+  --ui-ink: #f7f7f8;
+  --ui-ink-muted: #a1a1aa;
+  --ui-line: #303034;
+  --ui-line-strong: #48484f;
+  --ui-primary: #f4f4f5;
+  --ui-primary-strong: #ffffff;
+  --ui-primary-soft: #303034;
+  --ui-accent: #d4d4d8;
+  --ui-accent-soft: #303034;
+  --ui-warning: #f2b85b;
+  --ui-warning-soft: #493519;
+  --ui-danger: #ff8b82;
+  --ui-danger-soft: #4d2523;
+}
+
+@theme inline {
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --color-canvas: var(--ui-canvas);
+  --color-elevated: var(--ui-elevated);
+  --color-surface: var(--ui-surface);
+  --color-surface-muted: var(--ui-surface-muted);
+  --color-ink: var(--ui-ink);
+  --color-ink-muted: var(--ui-ink-muted);
+  --color-line: var(--ui-line);
+  --color-line-strong: var(--ui-line-strong);
+  --color-primary: var(--ui-primary);
+  --color-primary-strong: var(--ui-primary-strong);
+  --color-primary-soft: var(--ui-primary-soft);
+  --color-accent: var(--ui-accent);
+  --color-accent-soft: var(--ui-accent-soft);
+  --color-warning: var(--ui-warning);
+  --color-warning-soft: var(--ui-warning-soft);
+  --color-danger: var(--ui-danger);
+  --color-danger-soft: var(--ui-danger-soft);
+
+  --shadow-card:
+    0 1px 2px rgb(18 24 33 / 0.05), 0 8px 24px rgb(18 24 33 / 0.04);
+  --shadow-pop:
+    0 18px 48px rgb(18 24 33 / 0.14), 0 4px 12px rgb(18 24 33 / 0.06);
+
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+@layer components {
+  .admin-toolbar {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
+
+  .admin-toolbar > .base-field,
+  .admin-toolbar > label {
+    min-width: 10rem;
+    max-width: 20rem;
+    flex: 1 1 10rem;
+  }
+
+  .admin-toolbar > .base-button {
+    flex: 0 0 auto;
+  }
+
+  @media (max-width: 40rem) {
+    .admin-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-toolbar > .base-field,
+    .admin-toolbar > label {
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+    }
+
+    .admin-toolbar > .base-button {
+      width: 100%;
+    }
+  }
+}
+
+/* 骨架屏底色 + 高光扫过的组合背景,无法用单一工具类表达,收敛为自定义工具类。 */
+@utility skeleton-shimmer {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--ui-ink-muted) 12%, transparent),
+      transparent
+    ),
+    var(--ui-surface-muted);
+  background-size: 200% 100%;
+}
+
+@layer base {
+  html {
+    min-height: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+    background: var(--ui-canvas);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
+    background: var(--ui-canvas);
+    line-height: 1.5;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    letter-spacing: 0;
+  }
+
+  select option {
+    background: var(--ui-elevated);
+    color: var(--ui-ink);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    accent-color: var(--ui-primary);
+  }
+
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='number'] {
+    min-height: 2.5rem;
+    border: 1px solid var(--ui-line-strong);
+    border-radius: 0.375rem;
+    background: var(--ui-surface);
+    box-shadow: 0 1px 2px rgb(18 24 33 / 0.04);
+    color: var(--ui-ink);
+  }
+
+  * {
+    scrollbar-color: var(--ui-line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  a:hover {
+    text-decoration-thickness: 0.12em;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ui-primary) 68%, transparent);
+    outline-offset: 2px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: var(--ui-primary-soft);
+    color: var(--ui-ink);
+  }
+
+  #__nuxt {
+    min-height: 100vh;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  .codex-markdown,
+  .codex-markdown > * {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .codex-markdown-pre {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .codex-markdown-code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}

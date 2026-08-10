@@ -1,0 +1,115 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - status [ref=e96]: 管理员用户 | 应用骨架
+    - generic [ref=e3]:
+      - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+        - /url: "#main-content"
+      - complementary [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e8]: 导航
+          - navigation "次级导航" [ref=e9]:
+            - link "首页" [ref=e10] [cursor=pointer]:
+              - /url: /
+            - link "后台总览" [ref=e11] [cursor=pointer]:
+              - /url: /admin
+            - link "身份管理" [ref=e12] [cursor=pointer]:
+              - /url: /admin/identity
+            - link "业务审计" [ref=e13] [cursor=pointer]:
+              - /url: /admin/audit
+      - generic [ref=e14]:
+        - banner [ref=e15]:
+          - link "应用骨架" [ref=e17] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e19]: 应用骨架
+          - navigation "主导航" [ref=e20]:
+            - link "首页" [ref=e21] [cursor=pointer]:
+              - /url: /
+            - link "后台总览" [ref=e22] [cursor=pointer]:
+              - /url: /admin
+            - link "身份管理" [ref=e23] [cursor=pointer]:
+              - /url: /admin/identity
+            - link "业务审计" [ref=e24] [cursor=pointer]:
+              - /url: /admin/audit
+          - group "主题" [ref=e26]:
+            - button "跟随系统主题" [pressed] [ref=e27] [cursor=pointer]:
+              - generic [ref=e28]:
+                - img [ref=e29]
+                - generic [ref=e31]: 跟随系统主题
+            - button "浅色主题" [ref=e32] [cursor=pointer]:
+              - generic [ref=e33]:
+                - img [ref=e34]
+                - generic [ref=e40]: 浅色主题
+            - button "深色主题" [ref=e41] [cursor=pointer]:
+              - generic [ref=e42]:
+                - img [ref=e43]
+                - generic [ref=e45]: 深色主题
+        - main [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e49]:
+              - paragraph [ref=e50]: 身份管理
+              - heading "管理员用户" [level=1] [ref=e51]
+              - paragraph [ref=e52]: 用户列表、角色绑定、启停与密码重置按后端身份接口闭环。
+            - generic [ref=e53]:
+              - generic [ref=e54]:
+                - heading "查询" [level=2] [ref=e55]
+                - generic [ref=e56]:
+                  - generic [ref=e57]:
+                    - generic [ref=e58]: 关键字
+                    - textbox "关键字" [ref=e60]:
+                      - /placeholder: ""
+                  - combobox "启用状态" [ref=e61]:
+                    - option "全部状态" [selected]
+                    - option "启用"
+                    - option "停用"
+                  - button "查询" [ref=e62] [cursor=pointer]:
+                    - generic [ref=e63]: 查询
+              - generic [ref=e64]:
+                - heading "创建用户" [level=2] [ref=e65]
+                - generic [ref=e66]:
+                  - generic [ref=e67]:
+                    - generic [ref=e68]: 用户名
+                    - textbox "用户名" [ref=e70]:
+                      - /placeholder: ""
+                  - generic [ref=e71]:
+                    - generic [ref=e72]: 密码
+                    - textbox "密码" [ref=e74]:
+                      - /placeholder: ""
+                  - generic [ref=e75]:
+                    - generic [ref=e76]: 角色 keys
+                    - textbox "角色 keys 逗号分隔" [ref=e78]:
+                      - /placeholder: ""
+                    - generic [ref=e79]: 逗号分隔
+                  - button "创建" [ref=e80] [cursor=pointer]:
+                    - generic [ref=e81]: 创建
+              - generic [ref=e82]:
+                - heading "用户列表" [level=2] [ref=e83]
+                - table [ref=e85]:
+                  - rowgroup [ref=e86]:
+                    - row "用户名 主体 状态 角色 操作" [ref=e87]:
+                      - columnheader "用户名" [ref=e88]
+                      - columnheader "主体" [ref=e89]
+                      - columnheader "状态" [ref=e90]
+                      - columnheader "角色" [ref=e91]
+                      - columnheader "操作" [ref=e92]
+                  - rowgroup [ref=e93]:
+                    - row "admin user-admin 启用 admin 选择 停用" [ref=e97]:
+                      - cell "admin" [ref=e98]
+                      - cell "user-admin" [ref=e99]
+                      - cell "启用" [ref=e100]
+                      - cell "admin" [ref=e101]
+                      - cell "选择 停用" [ref=e102]:
+                        - generic [ref=e103]:
+                          - button "选择" [ref=e104] [cursor=pointer]:
+                            - generic [ref=e105]: 选择
+                          - button "停用" [ref=e106] [cursor=pointer]:
+                            - generic [ref=e107]: 停用
+  - generic:
+    - img
+  - generic [ref=e108]:
+    - button "Toggle Nuxt DevTools" [ref=e109] [cursor=pointer]:
+      - img [ref=e110]
+    - generic "Page load time" [ref=e113]:
+      - generic [ref=e114]: "108"
+      - generic [ref=e115]: ms
+    - button "Toggle Component Inspector" [ref=e117] [cursor=pointer]:
+      - img [ref=e118]

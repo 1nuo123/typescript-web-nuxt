@@ -1,0 +1,99 @@
+- generic [ref=e3]:
+  - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e8]: 导航
+      - navigation "次级导航" [ref=e9]:
+        - link "首页" [ref=e10] [cursor=pointer]:
+          - /url: /
+        - link "后台总览" [ref=e11] [cursor=pointer]:
+          - /url: /admin
+        - link "身份管理" [ref=e12] [cursor=pointer]:
+          - /url: /admin/identity
+        - link "业务审计" [ref=e13] [cursor=pointer]:
+          - /url: /admin/audit
+        - link "运维控制面" [ref=e14] [cursor=pointer]:
+          - /url: /admin/ops
+  - generic [ref=e15]:
+    - banner [ref=e16]:
+      - link "应用骨架" [ref=e18] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e20]: 应用骨架
+      - navigation "主导航" [ref=e21]:
+        - link "首页" [ref=e22] [cursor=pointer]:
+          - /url: /
+        - link "后台总览" [ref=e23] [cursor=pointer]:
+          - /url: /admin
+        - link "身份管理" [ref=e24] [cursor=pointer]:
+          - /url: /admin/identity
+        - link "业务审计" [ref=e25] [cursor=pointer]:
+          - /url: /admin/audit
+        - link "运维控制面" [ref=e26] [cursor=pointer]:
+          - /url: /admin/ops
+      - group "主题" [ref=e28]:
+        - button "跟随系统主题" [pressed] [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]:
+            - img [ref=e31]
+            - generic [ref=e33]: 跟随系统主题
+        - button "浅色主题" [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]:
+            - img [ref=e36]
+            - generic [ref=e42]: 浅色主题
+        - button "深色主题" [ref=e43] [cursor=pointer]:
+          - generic [ref=e44]:
+            - img [ref=e45]
+            - generic [ref=e47]: 深色主题
+    - main [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e51]:
+          - paragraph [ref=e52]: 身份管理
+          - heading "角色管理" [level=1] [ref=e53]
+          - paragraph [ref=e54]: 角色查询、创建、更新与 scope 替换使用身份管理强类型信封。
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - heading "查询" [level=2] [ref=e57]
+            - generic [ref=e58]:
+              - generic [ref=e59]:
+                - generic [ref=e60]: 关键字
+                - textbox "关键字" [ref=e62]:
+                  - /placeholder: ""
+              - button "查询角色" [ref=e63] [cursor=pointer]:
+                - generic [ref=e64]: 查询角色
+              - button "查询业务角色" [ref=e65] [cursor=pointer]:
+                - generic [ref=e66]: 查询业务角色
+          - generic [ref=e67]:
+            - heading "保存角色" [level=2] [ref=e68]
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - generic [ref=e71]: 角色 key
+                - textbox "角色 key" [ref=e73]:
+                  - /placeholder: ""
+              - generic [ref=e74]:
+                - generic [ref=e75]: 角色名称
+                - textbox "角色名称" [ref=e77]:
+                  - /placeholder: ""
+              - generic [ref=e78]:
+                - generic [ref=e79]: scope codes
+                - textbox "scope codes 逗号分隔" [ref=e81]:
+                  - /placeholder: ""
+                - generic [ref=e82]: 逗号分隔
+              - button "创建" [ref=e83] [cursor=pointer]:
+                - generic [ref=e84]: 创建
+              - button "更新" [ref=e85] [cursor=pointer]:
+                - generic [ref=e86]: 更新
+              - button "替换 scope" [ref=e87] [cursor=pointer]:
+                - generic [ref=e88]: 替换 scope
+          - generic [ref=e89]:
+            - heading "角色列表" [level=2] [ref=e90]
+            - table [ref=e92]:
+              - rowgroup [ref=e93]:
+                - row "角色 key 名称 Scope 用户数 操作" [ref=e94]:
+                  - columnheader "角色 key" [ref=e95]
+                  - columnheader "名称" [ref=e96]
+                  - columnheader "Scope" [ref=e97]
+                  - columnheader "用户数" [ref=e98]
+                  - columnheader "操作" [ref=e99]
+              - rowgroup [ref=e100]:
+                - row "暂无角色记录" [ref=e101]:
+                  - cell "暂无角色记录" [ref=e102]
