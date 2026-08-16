@@ -6,6 +6,13 @@ export interface CodexWorktreePolicy {
   disk_watermark_percent: number
 }
 
+export enum WorkspaceSelectionState {
+  Loading = 'loading',
+  Resolved = 'resolved',
+  Missing = 'missing',
+  Revoked = 'revoked',
+}
+
 export interface CodexWorkspace {
   workspace_id: string
   host_id: string
@@ -15,6 +22,7 @@ export interface CodexWorkspace {
   repo_fingerprint: string | null
   default_branch: string | null
   worktree_policy: CodexWorktreePolicy
+  is_pinned: boolean
   enabled: boolean
   created_at: string
   updated_at: string
@@ -23,6 +31,7 @@ export interface CodexWorkspace {
 
 export interface CodexWorkspaceUpdateRequest {
   display_name?: string
+  is_pinned?: boolean
   enabled?: boolean
   worktree_policy?: CodexWorktreePolicy
 }

@@ -25,6 +25,7 @@ export enum AdminIdentityOperationName {
   UserUpdate = 'user_update',
   UserPasswordReset = 'user_password_reset',
   UserRoleReplace = 'user_role_replace',
+  UserScopeReplace = 'user_scope_replace',
   UserDelete = 'user_delete',
   UserDisable = 'user_disable',
   UserEnable = 'user_enable',
@@ -48,6 +49,7 @@ export enum AdminIdentityPayloadKind {
   UserUpdate = 'admin_user_update',
   UserPasswordReset = 'admin_user_password_reset',
   UserRoleReplace = 'admin_user_role_replace',
+  UserScopeReplace = 'admin_user_scope_replace',
   UserDeleteResult = 'admin_user_delete_result',
   UserDisable = 'admin_user_disable',
   UserEnable = 'admin_user_enable',
@@ -143,6 +145,8 @@ export interface AdminUserPayload {
   username: string
   is_active: boolean
   role_keys: string[]
+  direct_scope_codes: string[]
+  effective_scope_codes: string[]
 }
 
 export interface AdminUserListPayload {
@@ -179,6 +183,13 @@ export interface AdminUserRoleReplaceDetail {
   kind: AdminIdentityPayloadKind.UserRoleReplace
   schema_version: string
   role_keys: string[]
+  confirmation: string
+}
+
+export interface AdminUserScopeReplaceDetail {
+  kind: AdminIdentityPayloadKind.UserScopeReplace
+  schema_version: string
+  scope_codes: string[]
   confirmation: string
 }
 

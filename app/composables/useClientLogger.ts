@@ -3,6 +3,13 @@ import { RuntimeLogSource, type RuntimeLogEntry } from '~/types/app'
 interface CaptureOptions {
   source?: RuntimeLogEntry['source']
   detail?: string
+  code?: string
+  route?: string
+  threadId?: string
+  turnId?: string
+  itemId?: string
+  eventType?: string
+  traceId?: string
 }
 
 const getMessage = (error: unknown) => {
@@ -14,7 +21,15 @@ const getMessage = (error: unknown) => {
     return error
   }
 
-  return '已捕获运行时错误。'
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return 'Captured non-serializable runtime error.'
+    }
+  }
+
+  return 'Captured runtime error.'
 }
 
 const createLogId = () => {
@@ -29,19 +44,30 @@ export const useClientLogger = () => {
   const logs = useState<RuntimeLogEntry[]>('runtime-logs', () => [])
 
   const capture = (error: unknown, options: CaptureOptions = {}) => {
+    const route = useRoute()
+    const routeThreadId =
+      typeof route.params.threadId === 'string'
+        ? route.params.threadId
+        : undefined
     const entry: RuntimeLogEntry = {
       id: createLogId(),
       source: options.source ?? RuntimeLogSource.Manual,
       message: getMessage(error),
       detail: options.detail,
+      code: options.code,
+      route: options.route ?? route.fullPath,
+      threadId: options.threadId ?? routeThreadId,
+      turnId: options.turnId,
+      itemId: options.itemId,
+      eventType: options.eventType,
+      traceId: options.traceId,
       createdAt: new Date().toISOString(),
     }
 
     logs.value = [entry, ...logs.value].slice(0, 20)
 
     if (import.meta.dev) {
-      const context = entry.detail ? ` (${entry.detail})` : ''
-      console.error(`[runtime] ${entry.source}: ${entry.message}${context}`)
+      console.error(`[runtime] ${JSON.stringify(entry)}`)
     }
   }
 

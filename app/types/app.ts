@@ -47,5 +47,12 @@ export interface RuntimeLogEntry {
   source: RuntimeLogSource
   message: string
   detail?: string
+  code?: string
+  route?: string
+  threadId?: string
+  turnId?: string
+  itemId?: string
+  eventType?: string
+  traceId?: string
   createdAt: string
 }

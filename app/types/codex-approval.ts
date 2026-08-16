@@ -24,6 +24,29 @@ export enum CodexApprovalState {
   Cancelled = 'cancelled',
 }
 
+export enum CodexApprovalDecisionState {
+  Idle = 'idle',
+  Submitting = 'submitting',
+  Acknowledged = 'acknowledged',
+  Failed = 'failed',
+}
+
+export interface CodexApprovalCommandAction {
+  action_type: string
+  command: string
+  path: string | null
+  name: string | null
+  query: string | null
+}
+
+export interface CodexApprovalFileChange {
+  path: string
+  change_kind: string
+  added_lines: number | null
+  deleted_lines: number | null
+  sensitive: boolean
+}
+
 export interface CodexApproval {
   approval_id: string
   owner_subject_id: string
@@ -41,10 +64,16 @@ export interface CodexApproval {
     workspace_name?: string | null
     risk_level: CodexApprovalRiskLevel
     command_summary?: string | null
+    command: string | null
+    command_actions: CodexApprovalCommandAction[]
+    working_directory: string | null
+    read_only: boolean
     file_scope: string[]
+    file_changes: CodexApprovalFileChange[]
     permission_names: string[]
     network_requested: boolean
     extra_root_requested: boolean
+    risk_reason: string | null
   }
   state: CodexApprovalState
   version: number

@@ -32,31 +32,31 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
   }),
   actions: {
     acceptEvent(event: CodexRealtimeEvent): CodexRealtimeApplyResult {
-      if (this.seenEventIds.includes(event.event_id)) {
+      if (this.seenEventIds.includes(event.header.event_id)) {
         return CodexRealtimeApplyResult.Duplicate
       }
-      const isNewEpoch = this.streamEpoch !== event.stream_epoch
+      const isNewEpoch = this.streamEpoch !== event.header.stream_epoch
       if (isNewEpoch) {
-        this.streamEpoch = event.stream_epoch
+        this.streamEpoch = event.header.stream_epoch
         this.lastCursor = null
         this.seenEventIds = []
         this.gapDetected = false
       }
-      if (event.cursor) this.lastCursor = event.cursor
+      if (event.header.cursor) this.lastCursor = event.header.cursor
       this.lastMessageAt = Date.now()
-      this.seenEventIds.push(event.event_id)
+      this.seenEventIds.push(event.header.event_id)
       if (this.seenEventIds.length > MAX_REMEMBERED_EVENT_IDS) {
         this.seenEventIds.splice(
           0,
           this.seenEventIds.length - MAX_REMEMBERED_EVENT_IDS,
         )
       }
-      if (event.type === CodexRealtimeEventType.StreamGapDetected) {
+      if (event.detail.kind === CodexRealtimeEventType.StreamGapDetected) {
         this.gapDetected = true
         this.lastCursor = null
         return CodexRealtimeApplyResult.Gap
       }
-      if (event.type === CodexRealtimeEventType.ConnectionReady) {
+      if (event.detail.kind === CodexRealtimeEventType.ConnectionReady) {
         this.status = CodexRealtimeConnectionStatus.Connected
         this.reconnectAttempt = 0
         this.lastError = null

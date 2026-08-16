@@ -49,7 +49,7 @@ describe('runtime error plugins', () => {
     })
   })
 
-  it('upgrades window and promise failures through captured client listeners', () => {
+  it('records window and promise failures without replacing the active page', () => {
     const listeners: Partial<
       Record<string, EventListenerOrEventListenerObject>
     > = {}
@@ -77,21 +77,27 @@ describe('runtime error plugins', () => {
       error: new Error('Window failure'),
       filename: 'app.js',
     } as ErrorEvent)
-    expect(useError().value).toMatchObject({
-      statusCode: RUNTIME_ERROR_STATUS_CODE,
+    expect(useError().value).toBeUndefined()
+    expect(useClientLogger().logs.value[0]).toMatchObject({
+      source: RuntimeLogSource.Window,
       message: 'Window failure',
+      detail: 'app.js',
     })
 
-    useError().value = undefined
     const rejectionListener = listeners[
       PROMISE_REJECTION_EVENT_NAME
     ] as EventListener
     rejectionListener({
       reason: new Error('Promise failure'),
     } as PromiseRejectionEvent)
-    expect(useError().value).toMatchObject({
-      statusCode: RUNTIME_ERROR_STATUS_CODE,
+    expect(useError().value).toBeUndefined()
+    expect(useClientLogger().logs.value[0]).toMatchObject({
+      source: RuntimeLogSource.Promise,
       message: 'Promise failure',
+    })
+    expect(useClientLogger().logs.value[1]).toMatchObject({
+      source: RuntimeLogSource.Window,
+      message: 'Window failure',
     })
   })
 

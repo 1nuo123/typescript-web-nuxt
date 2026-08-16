@@ -46,13 +46,11 @@ export default defineNuxtPlugin((nuxtApp) => {
       source: RuntimeLogSource.Window,
       detail: event.filename,
     })
-    showFatalError(event.error ?? event.message)
   })
 
   window.addEventListener('unhandledrejection', (event) => {
     logger.capture(event.reason, {
       source: RuntimeLogSource.Promise,
     })
-    showFatalError(event.reason)
   })
 })

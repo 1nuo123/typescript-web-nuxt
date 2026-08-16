@@ -357,6 +357,41 @@ describe('auth session API flow', () => {
     expect(useAuthStore().accessToken).toBe('locked-access')
   })
 
+  it('shares authentication initialization and waits for refresh completion', async () => {
+    let resolveRefresh: (
+      value: ReturnType<typeof tokenEnvelope>,
+    ) => void = () => undefined
+    const refreshResponse = new Promise<ReturnType<typeof tokenEnvelope>>(
+      (resolve) => {
+        resolveRefresh = resolve
+      },
+    )
+    const fetchMock = vi.fn((url: string) => {
+      if (url === AUTH_BROWSER_REFRESH_PATH) return refreshResponse
+      if (url === AUTH_ME_PATH) return Promise.resolve(principalEnvelope)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+    const authStore = useAuthStore()
+
+    const firstInitialization = authStore.initSession()
+    const secondInitialization = authStore.initSession()
+    await nextTick()
+
+    expect(authStore.initialized).toBe(false)
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === AUTH_BROWSER_REFRESH_PATH),
+    ).toHaveLength(1)
+
+    resolveRefresh(tokenEnvelope('restored-access'))
+    await Promise.all([firstInitialization, secondInitialization])
+
+    expect(authStore.initialized).toBe(true)
+    expect(authStore.status).toBe(AuthSessionStatus.Authenticated)
+    expect(authStore.accessToken).toBe('restored-access')
+    expect(authStore.principal?.username).toBe('admin')
+  })
+
   it('does not replay expired requests when the HttpOnly refresh cookie is unavailable', async () => {
     const fetchMock = vi.fn().mockRejectedValue(expiredError)
     vi.stubGlobal('$fetch', fetchMock)
@@ -545,6 +580,30 @@ describe('auth session API flow', () => {
       true,
     )
     expect(authStore.status).toBe(AuthSessionStatus.Anonymous)
+  })
+
+  it('keeps an authenticated session when a resource denies an optional capability', () => {
+    const authStore = useAuthStore()
+    authStore.applyTokenIssue(tokenEnvelope('permission-access').data)
+    authStore.principal = {
+      kind: 'authenticated_principal',
+      subject_id: 'subject-registered',
+      username: 'nuo',
+      roles: [AuthRole.RegisteredUser],
+      scopes: [AuthScope.CodexRead, AuthScope.CodexHostManage],
+      is_admin: false,
+    }
+
+    authStore.consumeApiError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      message: '当前账号没有审批权限。',
+      errorCode: AuthErrorCode.PermissionDenied,
+    })
+
+    expect(authStore.status).toBe(AuthSessionStatus.Authenticated)
+    expect(authStore.accessToken).toBe('permission-access')
+    expect(authStore.principal?.username).toBe('nuo')
   })
 
   it('clears local session even when revoke fails', async () => {

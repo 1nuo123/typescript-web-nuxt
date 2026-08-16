@@ -1,9 +1,9 @@
-<template><span class="sr-only">正在打开 Codex 任务</span></template>
+<template><span class="sr-only">正在打开 Codex 会话</span></template>
 
 <script setup lang="ts">
 import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
-import { LOGIN_ROUTE, CODEX_TASKS_ROUTE } from '~/types/routes'
+import { CODEX_TASKS_ROUTE, LOGIN_ROUTE } from '~/types/routes'
 
 definePageMeta({
   layout: 'codex',

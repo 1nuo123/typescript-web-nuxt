@@ -24,6 +24,7 @@ import type {
   AdminUserPasswordResetDetail,
   AdminUserPayload,
   AdminUserRoleReplaceDetail,
+  AdminUserScopeReplaceDetail,
   AdminUserStatusDetail,
   AdminUserStatusResultPayload,
   AdminUserUpdateDetail,
@@ -215,6 +216,8 @@ const userPasswordPath = (subjectId: string) =>
   `${userPath(subjectId)}/password`
 
 const userRolesPath = (subjectId: string) => `${userPath(subjectId)}/roles`
+
+const userScopesPath = (subjectId: string) => `${userPath(subjectId)}/scopes`
 
 const userDisablePath = (subjectId: string) => `${userPath(subjectId)}/disable`
 
@@ -516,6 +519,28 @@ export const createAdminIdentityClient = () => {
               schema_version: ADMIN_IDENTITY_SCHEMA_VERSION,
             },
           ),
+        ),
+      replaceScopes: (
+        subjectId: string,
+        detail: Omit<AdminUserScopeReplaceDetail, 'kind' | 'schema_version'>,
+      ) =>
+        client.command<AdminUserPayload>(
+          userScopesPath(subjectId),
+          {
+            expectedKind: AdminIdentityPayloadKind.User,
+            expectedOperationName: AdminIdentityOperationName.UserScopeReplace,
+            expectedSchemaVersion: ADMIN_IDENTITY_SCHEMA_VERSION,
+          },
+          buildIdentityEnvelope(
+            AdminIdentityPayloadKind.UserScopeReplace,
+            AdminIdentityOperationName.UserScopeReplace,
+            {
+              ...detail,
+              kind: AdminIdentityPayloadKind.UserScopeReplace,
+              schema_version: ADMIN_IDENTITY_SCHEMA_VERSION,
+            },
+          ),
+          { method: 'PUT' },
         ),
       disable: (
         subjectId: string,

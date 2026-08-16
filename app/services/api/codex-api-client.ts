@@ -29,6 +29,13 @@ export const createCodexApiClient = () => {
       body?: ApiRequestBody,
       options?: ApiRequestOptions,
     ) => request<T>(url, { ...options, method: 'PATCH', body }),
+    put: <T>(url: string, body?: ApiRequestBody, options?: ApiRequestOptions) =>
+      request<T>(url, { ...options, method: 'PUT', body }),
+    delete: <T>(
+      url: string,
+      body?: ApiRequestBody,
+      options?: ApiRequestOptions,
+    ) => request<T>(url, { ...options, method: 'DELETE', body }),
   }
 }
 

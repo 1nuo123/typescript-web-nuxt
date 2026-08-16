@@ -5,11 +5,11 @@
     <summary
       class="min-w-0 max-w-full cursor-pointer break-all font-mono text-xs font-semibold text-ink"
     >
-      {{ item.command || '命令执行' }}
+      {{ item.detail.command || '命令执行' }}
     </summary>
     <pre
       class="mt-3 max-h-80 max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all font-mono text-xs text-ink-muted"
-      >{{ item.output || '等待输出…' }}</pre
+      >{{ item.detail.output || '等待输出…' }}</pre
     >
   </details>
 </template>

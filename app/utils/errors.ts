@@ -1,4 +1,5 @@
-import type { ApiErrorPayload } from '~/types/api'
+import type { ApiErrorPayload } from '../types/api'
+import { AuthErrorCode } from '../types/auth'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
@@ -82,10 +83,19 @@ export const normalizeApiError = (error: unknown): ApiErrorPayload => {
 
 export const getDisplayError = (error: unknown) => {
   const normalized = normalizeApiError(error)
+  const authenticationFailure =
+    normalized.statusCode === 401 ||
+    [
+      AuthErrorCode.TokenInvalid,
+      AuthErrorCode.TokenExpired,
+      AuthErrorCode.TokenRevoked,
+      AuthErrorCode.TokenReused,
+    ].includes(normalized.errorCode as AuthErrorCode)
 
   return {
-    title:
-      normalized.statusCode === 404
+    title: authenticationFailure
+      ? '登录状态已失效'
+      : normalized.statusCode === 404
         ? '页面未找到'
         : normalized.statusCode === 403
           ? '无权访问'
@@ -94,7 +104,11 @@ export const getDisplayError = (error: unknown) => {
             : normalized.statusCode >= 500
               ? '服务暂不可用'
               : '请求错误',
-    description: normalized.message,
+    description: authenticationFailure
+      ? '请重新登录后继续。当前页面不会展示内部认证响应。'
+      : normalized.statusCode >= 500
+        ? '服务暂时无法完成请求，请稍后重试。'
+        : normalized.message,
     statusCode: normalized.statusCode,
     requestId: normalized.requestId,
     traceId: normalized.traceId,

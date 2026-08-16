@@ -57,4 +57,77 @@ describe('BaseModal', () => {
 
     component.unmount()
   })
+
+  it('closes with Escape and restores focus to the trigger', async () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = '打开弹窗'
+    document.body.append(trigger)
+    trigger.focus()
+
+    const component = await mountSuspended(BaseModal, {
+      props: {
+        open: true,
+        title: '可访问弹窗',
+      },
+      slots: {
+        default: '<input aria-label="弹窗输入" />',
+      },
+    })
+    await nextTick()
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    if (!dialog) throw new Error('预期弹窗已经渲染。')
+
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(component.emitted('close')).toHaveLength(1)
+
+    await component.setProps({ open: false })
+    await nextTick()
+    expect(document.activeElement).toBe(trigger)
+
+    component.unmount()
+    trigger.remove()
+  })
+
+  it('keeps Tab focus inside the dialog', async () => {
+    const component = await mountSuspended(BaseModal, {
+      props: {
+        open: true,
+        title: '焦点弹窗',
+      },
+      slots: {
+        default:
+          '<button id="first-content-action">第一项</button><button id="last-content-action">最后一项</button>',
+      },
+    })
+    await nextTick()
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
+    const panel = dialog?.querySelector<HTMLElement>('section')
+    const focusable = Array.from(
+      panel?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? [],
+    )
+    const first = focusable.at(0)
+    const last = focusable.at(-1)
+    if (!dialog || !panel || !first || !last) {
+      throw new Error('预期弹窗面板包含可聚焦控件。')
+    }
+
+    last.focus()
+    dialog.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }),
+    )
+    expect(document.activeElement).toBe(first)
+
+    first.focus()
+    dialog.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+      }),
+    )
+    expect(document.activeElement).toBe(last)
+
+    component.unmount()
+  })
 })

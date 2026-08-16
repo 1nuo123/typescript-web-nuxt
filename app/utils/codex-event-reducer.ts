@@ -1,7 +1,11 @@
 import {
+  CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
   CodexTimelineItemKind,
+  CodexTimelineItemSource,
   CodexTimelineItemStatus,
+  type CodexCommandTimelineItem,
   type CodexDiffTimelineItem,
+  type CodexNoticeTimelineItem,
   type CodexPlanTimelineItem,
   type CodexTextTimelineItem,
   type CodexTimelineItem,
@@ -12,8 +16,9 @@ import {
 } from '../types/codex-realtime'
 import type { CodexHost } from '../types/codex-host'
 import {
-  CodexThreadHistoryStatus,
+  CodexThreadStatus,
   type CodexThread,
+  type CodexThreadHistoryStatus,
 } from '../types/codex-thread'
 import type { CodexTurn } from '../types/codex-turn'
 import type { CodexWorkspace } from '../types/codex-workspace'
@@ -33,6 +38,7 @@ export interface CodexSessionProjection {
   orderedItemIdsByThread: Record<string, string[]>
   historyStatusByThread: Record<string, CodexThreadHistoryStatus>
   historyCursorByThread: Record<string, string | null>
+  itemSourceById: Record<string, CodexTimelineItemSource>
   protocolWarnings: string[]
 }
 
@@ -45,24 +51,166 @@ export const createCodexSessionProjection = (): CodexSessionProjection => ({
   orderedItemIdsByThread: {},
   historyStatusByThread: {},
   historyCursorByThread: {},
+  itemSourceById: {},
   protocolWarnings: [],
 })
+
+const retainThreadState = (
+  state: CodexSessionProjection,
+  threadsById: Record<string, CodexThread>,
+): CodexSessionProjection => {
+  const retainedThreadIds = new Set(Object.keys(threadsById))
+  const itemsById = Object.fromEntries(
+    Object.entries(state.itemsById).filter(([, item]) =>
+      retainedThreadIds.has(item.header.thread_id),
+    ),
+  )
+  return {
+    ...state,
+    threadsById,
+    turnsById: Object.fromEntries(
+      Object.entries(state.turnsById).filter(([, turn]) =>
+        retainedThreadIds.has(turn.thread_id),
+      ),
+    ),
+    itemsById,
+    orderedItemIdsByThread: Object.fromEntries(
+      Object.entries(state.orderedItemIdsByThread).filter(([threadId]) =>
+        retainedThreadIds.has(threadId),
+      ),
+    ),
+    historyStatusByThread: Object.fromEntries(
+      Object.entries(state.historyStatusByThread).filter(([threadId]) =>
+        retainedThreadIds.has(threadId),
+      ),
+    ),
+    historyCursorByThread: Object.fromEntries(
+      Object.entries(state.historyCursorByThread).filter(([threadId]) =>
+        retainedThreadIds.has(threadId),
+      ),
+    ),
+    itemSourceById: Object.fromEntries(
+      Object.entries(state.itemSourceById).filter(([itemId]) =>
+        Object.hasOwn(itemsById, itemId),
+      ),
+    ),
+  }
+}
+
+export const replaceCodexHosts = (
+  state: CodexSessionProjection,
+  hosts: CodexHost[],
+): CodexSessionProjection => {
+  const retainedHostIds = new Set(hosts.map((host) => host.host_id))
+  const workspacesById = Object.fromEntries(
+    Object.entries(state.workspacesById).filter(([, workspace]) =>
+      retainedHostIds.has(workspace.host_id),
+    ),
+  )
+  const threadsById = Object.fromEntries(
+    Object.entries(state.threadsById).filter(([, thread]) =>
+      retainedHostIds.has(thread.host_id),
+    ),
+  )
+  return retainThreadState(
+    {
+      ...state,
+      hostsById: Object.fromEntries(hosts.map((host) => [host.host_id, host])),
+      workspacesById,
+    },
+    threadsById,
+  )
+}
+
+export const replaceCodexWorkspacesForHost = (
+  state: CodexSessionProjection,
+  hostId: string,
+  workspaces: CodexWorkspace[],
+): CodexSessionProjection => {
+  const retainedWorkspaceIds = new Set(
+    workspaces.map((workspace) => workspace.workspace_id),
+  )
+  const workspacesById = {
+    ...Object.fromEntries(
+      Object.entries(state.workspacesById).filter(
+        ([, workspace]) => workspace.host_id !== hostId,
+      ),
+    ),
+    ...Object.fromEntries(
+      workspaces.map((workspace) => [workspace.workspace_id, workspace]),
+    ),
+  }
+  const threadsById = Object.fromEntries(
+    Object.entries(state.threadsById).filter(
+      ([, thread]) =>
+        thread.host_id !== hostId ||
+        retainedWorkspaceIds.has(thread.workspace_id),
+    ),
+  )
+  return retainThreadState({ ...state, workspacesById }, threadsById)
+}
+
+export interface CodexThreadQueryScope {
+  hostId: string
+  workspaceId: string | null
+  archived: boolean
+  searchTerm: string
+}
+
+export const replaceCodexThreadsForQuery = (
+  state: CodexSessionProjection,
+  scope: CodexThreadQueryScope,
+  threads: CodexThread[],
+): CodexSessionProjection => {
+  const normalizedSearchTerm = scope.searchTerm.trim()
+  const retainedEntries = Object.entries(state.threadsById).filter(
+    ([, thread]) => {
+      if (normalizedSearchTerm) return true
+      if (thread.host_id !== scope.hostId) return true
+      if (thread.archived !== scope.archived) return true
+      if (scope.workspaceId && thread.workspace_id !== scope.workspaceId)
+        return true
+      return false
+    },
+  )
+  const threadsById = {
+    ...Object.fromEntries(retainedEntries),
+    ...Object.fromEntries(
+      threads.map((thread) => [
+        thread.upstream_thread_id,
+        mergeThreadMetadata(
+          state.threadsById[thread.upstream_thread_id],
+          thread,
+        ),
+      ]),
+    ),
+  }
+  return retainThreadState(state, threadsById)
+}
 
 const upsertItem = (
   state: CodexSessionProjection,
   item: CodexTimelineItem,
+  source: CodexTimelineItemSource,
 ): CodexSessionProjection => {
   const boundedItem = boundTimelineItem(item)
-  const orderedIds = state.orderedItemIdsByThread[item.thread_id] ?? []
-  const nextOrderedIds = orderedIds.includes(item.item_id)
+  const orderedIds = state.orderedItemIdsByThread[item.header.thread_id] ?? []
+  const nextOrderedIds = orderedIds.includes(item.header.item_id)
     ? orderedIds
-    : [...orderedIds, item.item_id]
+    : [...orderedIds, item.header.item_id]
   return {
     ...state,
-    itemsById: { ...state.itemsById, [item.item_id]: boundedItem },
+    itemsById: {
+      ...state.itemsById,
+      [item.header.item_id]: boundedItem,
+    },
     orderedItemIdsByThread: {
       ...state.orderedItemIdsByThread,
-      [item.thread_id]: nextOrderedIds,
+      [item.header.thread_id]: nextOrderedIds,
+    },
+    itemSourceById: {
+      ...state.itemSourceById,
+      [item.header.item_id]: source,
     },
   }
 }
@@ -71,17 +219,20 @@ const reconcileOptimisticUserItem = (
   state: CodexSessionProjection,
   item: CodexTimelineItem,
 ): CodexSessionProjection => {
-  if (item.kind !== CodexTimelineItemKind.UserMessage || !('text' in item)) {
+  if (item.detail.kind !== CodexTimelineItemKind.UserMessage) {
     return state
   }
-  const orderedIds = state.orderedItemIdsByThread[item.thread_id] ?? []
+  const userItem = item as CodexTextTimelineItem
+  const orderedIds = state.orderedItemIdsByThread[item.header.thread_id] ?? []
   const optimisticId = orderedIds.find((itemId) => {
     const candidate = state.itemsById[itemId]
+    const candidateDetail = candidate?.detail
+    const candidateText =
+      candidateDetail && 'text' in candidateDetail ? candidateDetail.text : null
     return (
       itemId.startsWith('local-') &&
-      candidate?.kind === CodexTimelineItemKind.UserMessage &&
-      'text' in candidate &&
-      candidate.text === item.text
+      candidateDetail?.kind === CodexTimelineItemKind.UserMessage &&
+      candidateText === userItem.detail.text
     )
   })
   if (!optimisticId) return state
@@ -94,89 +245,223 @@ const reconcileOptimisticUserItem = (
   return {
     ...state,
     itemsById,
+    itemSourceById: Object.fromEntries(
+      Object.entries(state.itemSourceById).filter(
+        ([itemId]) => itemId !== optimisticId,
+      ),
+    ),
     orderedItemIdsByThread: {
       ...state.orderedItemIdsByThread,
-      [item.thread_id]: orderedIds.filter((itemId) => itemId !== optimisticId),
+      [item.header.thread_id]: orderedIds.filter(
+        (itemId) => itemId !== optimisticId,
+      ),
     },
   }
 }
 
-const discardThreadItems = (
+const discardOptimisticThreadItems = (
   state: CodexSessionProjection,
   threadId: string,
 ): Record<string, CodexTimelineItem> =>
   Object.fromEntries(
     Object.entries(state.itemsById).filter(
-      ([, item]) => item.thread_id !== threadId,
+      ([itemId, item]) =>
+        item.header.thread_id !== threadId ||
+        state.itemSourceById[itemId] !== CodexTimelineItemSource.Optimistic,
     ),
   )
 
 const boundTimelineItem = (item: CodexTimelineItem): CodexTimelineItem => {
-  if ('text' in item) {
+  if (
+    item.detail.kind === CodexTimelineItemKind.UserMessage ||
+    item.detail.kind === CodexTimelineItemKind.AgentMessage
+  ) {
+    const textItem = item as CodexTextTimelineItem
     return {
-      ...item,
-      text: truncateCodexContent(item.text, CODEX_TIMELINE_TEXT_LIMIT),
+      ...textItem,
+      detail: {
+        ...textItem.detail,
+        text: truncateCodexContent(
+          textItem.detail.text,
+          CODEX_TIMELINE_TEXT_LIMIT,
+        ),
+      },
     }
   }
-  if (item.kind === CodexTimelineItemKind.Command) {
+  if (item.detail.kind === CodexTimelineItemKind.Notice) {
+    const noticeItem = item as CodexNoticeTimelineItem
     return {
-      ...item,
-      command: truncateCodexContent(item.command, CODEX_TIMELINE_TEXT_LIMIT),
-      output: truncateCodexContent(item.output, CODEX_COMMAND_OUTPUT_LIMIT),
+      ...noticeItem,
+      detail: {
+        ...noticeItem.detail,
+        text: truncateCodexContent(
+          noticeItem.detail.text,
+          CODEX_TIMELINE_TEXT_LIMIT,
+        ),
+      },
     }
+  }
+  if (item.detail.kind === CodexTimelineItemKind.Command) {
+    const commandItem = item as CodexCommandTimelineItem
+    return {
+      ...commandItem,
+      detail: {
+        ...commandItem.detail,
+        command: truncateCodexContent(
+          commandItem.detail.command,
+          CODEX_TIMELINE_TEXT_LIMIT,
+        ),
+        output: truncateCodexContent(
+          commandItem.detail.output,
+          CODEX_COMMAND_OUTPUT_LIMIT,
+        ),
+      },
+    } as CodexCommandTimelineItem
   }
   return item
 }
 
+const mergeThreadMetadata = (
+  existing: CodexThread | undefined,
+  incoming: CodexThread,
+): CodexThread => {
+  if (!existing) return incoming
+  const incomingRecency = Date.parse(incoming.recency_at)
+  const existingRecency = Date.parse(existing.recency_at)
+  return {
+    ...existing,
+    ...incoming,
+    display_name: incoming.display_name || existing.display_name,
+    model: incoming.model || existing.model,
+    reasoning_effort: incoming.reasoning_effort || existing.reasoning_effort,
+    source_kind: incoming.source_kind || existing.source_kind,
+    created_at: incoming.created_at || existing.created_at,
+    recency_at:
+      Number.isFinite(incomingRecency) && incomingRecency > existingRecency
+        ? incoming.recency_at
+        : existing.recency_at,
+    updated_at: incoming.updated_at || existing.updated_at,
+    last_synced_at: incoming.last_synced_at || existing.last_synced_at,
+  }
+}
+
+const finalizeTurnItems = (
+  state: CodexSessionProjection,
+  turnId: string,
+  failed: boolean,
+): Record<string, CodexTimelineItem> =>
+  Object.fromEntries(
+    Object.entries(state.itemsById).map(([itemId, item]) => [
+      itemId,
+      item.header.turn_id === turnId &&
+      item.header.status === CodexTimelineItemStatus.Streaming
+        ? {
+            ...item,
+            header: {
+              ...item.header,
+              status: failed
+                ? CodexTimelineItemStatus.Failed
+                : CodexTimelineItemStatus.Completed,
+            },
+          }
+        : item,
+    ]),
+  ) as Record<string, CodexTimelineItem>
+
+const advanceThreadActivity = (
+  state: CodexSessionProjection,
+  threadId: string | null | undefined,
+  occurredAt: string,
+): CodexSessionProjection => {
+  if (!threadId) return state
+  const thread = state.threadsById[threadId]
+  const occurredAtTimestamp = Date.parse(occurredAt)
+  if (
+    !thread ||
+    !Number.isFinite(occurredAtTimestamp) ||
+    occurredAtTimestamp <= Date.parse(thread.recency_at)
+  ) {
+    return state
+  }
+  return {
+    ...state,
+    threadsById: {
+      ...state.threadsById,
+      [threadId]: {
+        ...thread,
+        recency_at: occurredAt,
+      },
+    },
+  }
+}
+
 const applyItemDelta = (
   state: CodexSessionProjection,
-  event: Extract<
-    CodexRealtimeEvent,
-    { type: CodexRealtimeEventType.ItemDelta }
+  detail: Extract<
+    CodexRealtimeEvent['detail'],
+    { kind: CodexRealtimeEventType.ItemDelta }
   >,
 ): CodexSessionProjection => {
-  const existing = state.itemsById[event.payload.item_id]
+  const existing = state.itemsById[detail.item_id]
   const item: CodexTextTimelineItem = {
-    item_id: event.payload.item_id,
-    thread_id: event.payload.thread_id,
-    turn_id: event.payload.turn_id,
-    kind: CodexTimelineItemKind.AgentMessage,
-    status: CodexTimelineItemStatus.Streaming,
-    text:
-      existing && 'text' in existing
-        ? appendCodexContent(
-            existing.text,
-            event.payload.delta,
-            CODEX_TIMELINE_TEXT_LIMIT,
-          )
-        : truncateCodexContent(event.payload.delta, CODEX_TIMELINE_TEXT_LIMIT),
+    header: {
+      item_id: detail.item_id,
+      thread_id: detail.thread_id,
+      turn_id: detail.turn_id,
+      detail_kind: CodexTimelineItemKind.AgentMessage,
+      schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+      status: CodexTimelineItemStatus.Streaming,
+    },
+    detail: {
+      kind: CodexTimelineItemKind.AgentMessage,
+      schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+      text:
+        existing && 'text' in existing.detail
+          ? appendCodexContent(
+              existing.detail.text,
+              detail.delta,
+              CODEX_TIMELINE_TEXT_LIMIT,
+            )
+          : truncateCodexContent(detail.delta, CODEX_TIMELINE_TEXT_LIMIT),
+    },
   }
-  return upsertItem(state, item)
+  return upsertItem(state, item, CodexTimelineItemSource.Realtime)
 }
 
 export const reduceCodexRealtimeEvent = (
   state: CodexSessionProjection,
   event: CodexRealtimeEvent,
 ): CodexSessionProjection => {
-  switch (event.type) {
+  const detail = event.detail
+  const activityState = [
+    CodexRealtimeEventType.TurnStarted,
+    CodexRealtimeEventType.TurnCompleted,
+    CodexRealtimeEventType.TurnFailed,
+    CodexRealtimeEventType.TurnInterrupted,
+    CodexRealtimeEventType.ItemUpsert,
+    CodexRealtimeEventType.ApprovalOpened,
+    CodexRealtimeEventType.ApprovalResolved,
+  ].includes(detail.kind)
+    ? advanceThreadActivity(
+        state,
+        event.header.thread_id,
+        event.header.occurred_at,
+      )
+    : state
+  switch (detail.kind) {
     case CodexRealtimeEventType.HostSnapshot:
-      return {
-        ...state,
-        hostsById: Object.fromEntries(
-          event.payload.hosts.map((host) => [host.host_id, host]),
-        ),
-      }
+      return replaceCodexHosts(state, detail.hosts)
     case CodexRealtimeEventType.HostStatusChanged: {
-      const host = state.hostsById[event.payload.host_id]
-      if (!host) return state
+      const host = activityState.hostsById[detail.host_id]
+      if (!host) return activityState
       return {
-        ...state,
+        ...activityState,
         hostsById: {
-          ...state.hostsById,
+          ...activityState.hostsById,
           [host.host_id]: {
             ...host,
-            status: event.payload.status,
-            last_seen_at: event.payload.last_seen_at ?? host.last_seen_at,
+            status: detail.status,
+            last_seen_at: detail.last_seen_at ?? host.last_seen_at,
           },
         },
       }
@@ -185,64 +470,83 @@ export const reduceCodexRealtimeEvent = (
       return {
         ...state,
         workspacesById: Object.fromEntries(
-          event.payload.workspaces.map((workspace) => [
+          detail.workspaces.map((workspace) => [
             workspace.workspace_id,
             workspace,
           ]),
         ),
       }
     case CodexRealtimeEventType.ThreadSnapshot: {
-      const threadId = event.payload.thread.upstream_thread_id
+      const threadId = detail.thread.upstream_thread_id
+      const mergedThread = mergeThreadMetadata(
+        state.threadsById[threadId],
+        detail.thread,
+      )
       const snapshotMetadata: CodexSessionProjection = {
         ...state,
         threadsById: {
           ...state.threadsById,
-          [threadId]: event.payload.thread,
+          [threadId]: mergedThread,
         },
         historyStatusByThread: {
           ...state.historyStatusByThread,
-          [threadId]: event.payload.history_status,
+          [threadId]: detail.history_status,
         },
         historyCursorByThread: {
           ...state.historyCursorByThread,
-          [threadId]: event.payload.next_history_cursor ?? null,
+          [threadId]: detail.next_history_cursor ?? null,
         },
-      }
-      if (event.payload.history_status !== CodexThreadHistoryStatus.Complete) {
-        return snapshotMetadata
       }
       let nextState: CodexSessionProjection = {
         ...snapshotMetadata,
         turnsById: {
           ...state.turnsById,
           ...Object.fromEntries(
-            event.payload.turns.map((turn) => [turn.turn_id, turn]),
+            detail.turns.map((turn) => [turn.turn_id, turn]),
           ),
         },
-        itemsById: event.payload.append_history
+        itemsById: detail.append_history
           ? state.itemsById
-          : discardThreadItems(state, threadId),
+          : discardOptimisticThreadItems(state, threadId),
+        itemSourceById: detail.append_history
+          ? state.itemSourceById
+          : Object.fromEntries(
+              Object.entries(state.itemSourceById).filter(
+                ([itemId]) =>
+                  state.itemsById[itemId]?.header.thread_id !== threadId ||
+                  state.itemSourceById[itemId] !==
+                    CodexTimelineItemSource.Optimistic,
+              ),
+            ),
         orderedItemIdsByThread: {
           ...state.orderedItemIdsByThread,
-          [threadId]: event.payload.append_history
+          [threadId]: detail.append_history
             ? (state.orderedItemIdsByThread[threadId] ?? [])
-            : [],
+            : (state.orderedItemIdsByThread[threadId] ?? []).filter(
+                (itemId) =>
+                  state.itemSourceById[itemId] !==
+                  CodexTimelineItemSource.Optimistic,
+              ),
         },
       }
-      for (const item of event.payload.items)
-        nextState = upsertItem(nextState, item)
+      for (const item of detail.items)
+        nextState = upsertItem(
+          nextState,
+          item,
+          CodexTimelineItemSource.Snapshot,
+        )
       return nextState
     }
     case CodexRealtimeEventType.ThreadUpdated: {
       const existing =
-        state.threadsById[event.payload.thread.upstream_thread_id]
-      if (!existing) return state
-      const merged: CodexThread = { ...existing, ...event.payload.thread }
+        activityState.threadsById[detail.thread.upstream_thread_id]
+      if (!existing) return activityState
+      const merged = mergeThreadMetadata(existing, detail.thread as CodexThread)
       return {
-        ...state,
+        ...activityState,
         threadsById: {
-          ...state.threadsById,
-          [event.payload.thread.upstream_thread_id]: merged,
+          ...activityState.threadsById,
+          [detail.thread.upstream_thread_id]: merged,
         },
       }
     }
@@ -250,30 +554,36 @@ export const reduceCodexRealtimeEvent = (
     case CodexRealtimeEventType.TurnCompleted:
     case CodexRealtimeEventType.TurnFailed:
     case CodexRealtimeEventType.TurnInterrupted: {
-      const turn = event.payload.turn
-      const thread = state.threadsById[turn.thread_id]
-      const isStarted = event.type === CodexRealtimeEventType.TurnStarted
+      const turn = detail.turn
+      const thread = activityState.threadsById[turn.thread_id]
+      const isStarted = detail.kind === CodexRealtimeEventType.TurnStarted
       const nextThread = thread
         ? {
             ...thread,
             active_turn_id: isStarted ? turn.turn_id : null,
             status: isStarted
-              ? 'active'
-              : event.type === CodexRealtimeEventType.TurnInterrupted
-                ? 'interrupted'
-                : 'idle',
+              ? CodexThreadStatus.Active
+              : detail.kind === CodexRealtimeEventType.TurnInterrupted
+                ? CodexThreadStatus.Interrupted
+                : CodexThreadStatus.Idle,
           }
         : null
+      const terminalFailed =
+        detail.kind === CodexRealtimeEventType.TurnFailed ||
+        detail.kind === CodexRealtimeEventType.TurnInterrupted
       return {
-        ...state,
+        ...activityState,
+        itemsById: isStarted
+          ? activityState.itemsById
+          : finalizeTurnItems(activityState, turn.turn_id, terminalFailed),
         turnsById: {
-          ...state.turnsById,
+          ...activityState.turnsById,
           [turn.turn_id]: turn,
         },
         ...(nextThread
           ? {
               threadsById: {
-                ...state.threadsById,
+                ...activityState.threadsById,
                 [turn.thread_id]: nextThread,
               },
             }
@@ -282,43 +592,58 @@ export const reduceCodexRealtimeEvent = (
     }
     case CodexRealtimeEventType.ItemUpsert:
       return upsertItem(
-        reconcileOptimisticUserItem(state, event.payload.item),
-        event.payload.item,
+        reconcileOptimisticUserItem(activityState, detail.item),
+        detail.item,
+        CodexTimelineItemSource.Realtime,
       )
     case CodexRealtimeEventType.ItemDelta:
-      return applyItemDelta(state, event)
+      return applyItemDelta(state, detail)
     case CodexRealtimeEventType.TurnPlanUpdated: {
       const item: CodexPlanTimelineItem = {
-        item_id: event.payload.item_id,
-        thread_id: event.payload.thread_id,
-        turn_id: event.payload.turn_id,
-        kind: CodexTimelineItemKind.Plan,
-        status: CodexTimelineItemStatus.Streaming,
-        explanation: event.payload.explanation,
-        steps: event.payload.steps,
+        header: {
+          item_id: detail.item_id,
+          thread_id: detail.thread_id,
+          turn_id: detail.turn_id,
+          detail_kind: CodexTimelineItemKind.Plan,
+          schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+          status: CodexTimelineItemStatus.Streaming,
+        },
+        detail: {
+          kind: CodexTimelineItemKind.Plan,
+          schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+          explanation: detail.explanation,
+          steps: detail.steps,
+        },
       }
-      return upsertItem(state, item)
+      return upsertItem(activityState, item, CodexTimelineItemSource.Realtime)
     }
     case CodexRealtimeEventType.TurnDiffUpdated: {
       const item: CodexDiffTimelineItem = {
-        item_id: event.payload.item_id,
-        thread_id: event.payload.thread_id,
-        turn_id: event.payload.turn_id,
-        kind: CodexTimelineItemKind.Diff,
-        status: CodexTimelineItemStatus.Streaming,
-        diff: event.payload.diff,
+        header: {
+          item_id: detail.item_id,
+          thread_id: detail.thread_id,
+          turn_id: detail.turn_id,
+          detail_kind: CodexTimelineItemKind.Diff,
+          schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+          status: CodexTimelineItemStatus.Streaming,
+        },
+        detail: {
+          kind: CodexTimelineItemKind.Diff,
+          schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+          diff: detail.diff,
+        },
       }
-      return upsertItem(state, item)
+      return upsertItem(activityState, item, CodexTimelineItemSource.Realtime)
     }
     case CodexRealtimeEventType.ProtocolWarning:
       return {
-        ...state,
+        ...activityState,
         protocolWarnings: [
-          ...state.protocolWarnings,
-          event.payload.warning,
+          ...activityState.protocolWarnings,
+          detail.warning,
         ].slice(-20),
       }
     default:
-      return state
+      return activityState
   }
 }

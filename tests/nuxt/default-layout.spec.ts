@@ -116,6 +116,34 @@ describe('default layout navigation permissions', () => {
     expect(useAppConfig().navigation.items).toEqual(APP_NAVIGATION_ITEMS)
   })
 
+  it('shows Codex to an authenticated registered user on the public shell', async () => {
+    stubMatchMedia()
+    useRuntimeConfig().public[RuntimeFeatureFlag.Codex] = true
+
+    const authStore = useAuthStore()
+    authStore.status = AuthSessionStatus.Authenticated
+    authStore.initialized = true
+    authStore.accessToken = 'access-token'
+    authStore.principal = {
+      kind: 'authenticated_principal',
+      subject_id: 'subject-registered',
+      username: 'nuo',
+      roles: [],
+      scopes: [AuthScope.CodexRead],
+      is_admin: false,
+    }
+
+    routeState.path = PUBLIC_HOME_ROUTE
+    const layout = await mountSuspended(DefaultLayout, {
+      slots: {
+        default: () => PAGE_CONTENT,
+      },
+    })
+
+    expect(layout.text()).toContain('Codex')
+    layout.unmount()
+  })
+
   it('shows logout only in authenticated admin routes and returns to login', async () => {
     stubMatchMedia()
 

@@ -9,7 +9,7 @@
           class="min-h-9 min-w-0 max-w-full cursor-pointer appearance-none rounded-md border border-line-strong bg-surface py-1 pr-9 pl-3 text-xs text-ink shadow-[0_1px_2px_rgb(18_24_33/0.04)] outline-none transition-[border-color,box-shadow] hover:border-ink-muted/55 focus:border-primary focus:ring-[3px] focus:ring-primary/15"
         >
           <option
-            v-for="(file, index) in item.diff.files"
+            v-for="(file, index) in item.detail.diff.files"
             :key="file.path"
             :value="index"
           >
@@ -56,7 +56,7 @@
         文件变更过大，已限制在线预览。
       </p>
       <div v-else class="min-w-[38rem] font-mono text-xs">
-        <div v-for="hunk in selectedFile.hunks" :key="hunk.header">
+        <div v-for="hunk in visibleHunks" :key="hunk.header">
           <p
             class="m-0 border-b border-line bg-surface-muted px-3 py-1 text-primary"
           >
@@ -112,7 +112,22 @@
       </div>
     </div>
     <p
-      v-if="item.diff.truncated || selectedFile?.truncated"
+      v-else
+      class="m-0 rounded-md border border-line bg-surface-muted p-3 text-sm text-ink-muted"
+    >
+      当前变更没有可展示的文件内容。
+    </p>
+    <BaseButton
+      v-if="hiddenLineCount > 0"
+      size="sm"
+      variant="secondary"
+      class="justify-self-start"
+      @click="visibleLineLimit += DIFF_LINE_CHUNK_SIZE"
+    >
+      再加载 {{ Math.min(hiddenLineCount, DIFF_LINE_CHUNK_SIZE) }} 行
+    </BaseButton>
+    <p
+      v-if="item.detail.diff.truncated || selectedFile?.truncated"
       class="m-0 text-xs text-ink-muted"
     >
       变更已截断，请在本机 Codex 中查看完整内容。
@@ -135,14 +150,37 @@ enum DiffViewMode {
 const props = defineProps<{ item: CodexDiffTimelineItem }>()
 const viewMode = ref<DiffViewMode>(DiffViewMode.Unified)
 const selectedFileIndex = ref(0)
+const DIFF_LINE_CHUNK_SIZE = 800
+const visibleLineLimit = ref(DIFF_LINE_CHUNK_SIZE)
 const fileSelectId = useId()
 const modes = [
   { value: DiffViewMode.Unified, label: '统一' },
   { value: DiffViewMode.Split, label: '分栏' },
 ]
 const selectedFile = computed(
-  () => props.item.diff.files[selectedFileIndex.value] ?? null,
+  () => props.item.detail.diff.files[selectedFileIndex.value] ?? null,
 )
+const totalLineCount = computed(
+  () =>
+    selectedFile.value?.hunks.reduce(
+      (total, hunk) => total + hunk.lines.length,
+      0,
+    ) ?? 0,
+)
+const hiddenLineCount = computed(() =>
+  Math.max(totalLineCount.value - visibleLineLimit.value, 0),
+)
+const visibleHunks = computed(() => {
+  const file = selectedFile.value
+  if (!file) return []
+  let remaining = visibleLineLimit.value
+  return file.hunks.flatMap((hunk) => {
+    if (remaining <= 0) return []
+    const lines = hunk.lines.slice(0, remaining)
+    remaining -= lines.length
+    return [{ ...hunk, lines }]
+  })
+})
 const lineClass: Record<CodexDiffLineKind, string> = {
   [CodexDiffLineKind.Context]: 'text-ink-muted',
   [CodexDiffLineKind.Addition]: 'bg-accent-soft text-accent',
@@ -154,4 +192,8 @@ const prefix = (kind: CodexDiffLineKind): string =>
     : kind === CodexDiffLineKind.Deletion
       ? '- '
       : '  '
+
+watch(selectedFileIndex, () => {
+  visibleLineLimit.value = DIFF_LINE_CHUNK_SIZE
+})
 </script>

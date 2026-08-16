@@ -1,160 +1,122 @@
 <template>
-  <section class="mx-auto grid w-full min-w-0 max-w-3xl grid-cols-1 gap-6">
-    <header
-      class="flex items-center justify-between gap-3 border-b border-line pb-5"
-    >
-      <h1 class="m-0 text-xl font-semibold">审批</h1>
-      <span class="text-xs text-ink-muted"
-        >{{ approvalStore.pending.length }} 项待处理</span
+  <section class="h-full min-h-0 overflow-y-auto p-4 sm:p-6">
+    <CodexMobilePageHeader title="审批中心" />
+    <div class="mx-auto grid w-full max-w-3xl gap-5">
+      <header
+        class="flex items-center justify-between gap-3 border-b border-line pb-4"
       >
-    </header>
+        <div>
+          <h1 class="m-0 text-lg font-semibold">审批</h1>
+          <p class="mt-1 mb-0 text-xs text-ink-muted">
+            {{ approvalStore.pending.length }} 项待处理
+          </p>
+        </div>
+      </header>
 
-    <AppSkeleton v-if="approvalStore.loading" class="h-40" />
-    <EmptyState
-      v-else-if="approvalStore.pending.length === 0"
-      eyebrow="当前安全"
-      title="没有待处理审批"
-      description="新的命令或文件变更请求会实时出现在这里。"
-    />
-    <div v-else class="grid gap-3">
-      <article
-        v-for="approval in approvalStore.pending"
-        :key="approval.approval_id"
-        class="grid gap-4 rounded-lg border border-line bg-surface p-4 shadow-card"
+      <AppSkeleton v-if="approvalStore.loading" class="h-40" />
+      <EmptyState
+        v-else-if="approvalStore.pending.length === 0"
+        eyebrow="当前安全"
+        title="没有待处理审批"
+        description="新的命令或文件变更请求会实时出现在这里。"
+      />
+      <div v-else class="grid gap-5">
+        <section
+          v-for="group in approvalGroups"
+          :key="group.key"
+          class="grid gap-3"
+        >
+          <header class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="m-0 text-sm font-semibold">{{ group.label }}</h2>
+            <BaseButton
+              v-if="group.canApproveReadOnly"
+              size="sm"
+              variant="secondary"
+              :disabled="group.submitting"
+              @click="approveReadOnlyGroup(group.items)"
+            >
+              <CheckCheck class="size-3.5" aria-hidden="true" />
+              {{ group.submitting ? '提交中…' : '允许本组只读命令' }}
+            </BaseButton>
+          </header>
+          <CodexApprovalCard
+            v-for="approval in group.items"
+            :key="approval.approval_id"
+            :approval="approval"
+          />
+        </section>
+      </div>
+
+      <section
+        v-if="approvalStore.recentlyResolved.length"
+        class="grid gap-2 border-t border-line pt-4"
       >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h2 class="m-0 text-base font-semibold">
-              {{ approval.display_summary.title || 'Codex 审批' }}
-            </h2>
-            <p class="mt-1 mb-0 text-sm text-ink-muted">
-              {{ approval.display_summary.reason || 'Codex 请求继续执行。' }}
-            </p>
-          </div>
-          <BaseBadge
-            :tone="
-              approval.risk_level === CodexApprovalRiskLevel.High
-                ? 'warning'
-                : 'neutral'
-            "
-          >
-            {{
-              approval.risk_level === CodexApprovalRiskLevel.High
-                ? '增强验证'
-                : '单次'
-            }}
-          </BaseBadge>
+        <h2 class="m-0 text-sm font-semibold">最近处理</h2>
+        <div
+          v-for="approval in approvalStore.recentlyResolved"
+          :key="`resolved-${approval.approval_id}`"
+          class="flex items-center justify-between gap-3 border-b border-line py-2 text-xs"
+        >
+          <span class="truncate">{{
+            approval.display_summary.title || 'Codex 审批'
+          }}</span>
+          <span class="grid shrink-0 justify-items-end gap-0.5">
+            <strong class="font-medium text-ink">
+              {{ resolvedDecisionLabel(approval) }}
+            </strong>
+            <span class="text-ink-muted">
+              {{ approvalStatePresentation[approval.state].label }}
+            </span>
+          </span>
         </div>
-        <dl class="m-0 grid gap-2 rounded-md bg-surface-muted p-3 text-xs">
-          <div
-            v-if="approval.display_summary.command_summary"
-            class="flex gap-3"
-          >
-            <dt class="w-20 shrink-0 text-ink-muted">命令摘要</dt>
-            <dd class="m-0 break-all">
-              {{ approval.display_summary.command_summary }}
-            </dd>
-          </div>
-          <div
-            v-if="approval.display_summary.workspace_name"
-            class="flex gap-3"
-          >
-            <dt class="w-20 shrink-0 text-ink-muted">工作区</dt>
-            <dd class="m-0 break-all">
-              {{ approval.display_summary.workspace_name }}
-            </dd>
-          </div>
-          <div
-            v-if="approval.display_summary.file_scope.length"
-            class="flex gap-3"
-          >
-            <dt class="w-20 shrink-0 text-ink-muted">文件范围</dt>
-            <dd class="m-0 break-all">
-              {{ approval.display_summary.file_scope.join('、') }}
-            </dd>
-          </div>
-          <div
-            v-if="approval.display_summary.permission_names.length"
-            class="flex gap-3"
-          >
-            <dt class="w-20 shrink-0 text-ink-muted">额外权限</dt>
-            <dd class="m-0">
-              {{ approval.display_summary.permission_names.join('、') }}
-            </dd>
-          </div>
-          <div
-            v-if="approval.display_summary.network_requested"
-            class="flex gap-3"
-          >
-            <dt class="w-20 shrink-0 text-ink-muted">网络权限</dt>
-            <dd class="m-0">请求访问网络</dd>
-          </div>
-        </dl>
-        <div class="flex justify-end gap-2">
-          <BaseButton
-            variant="secondary"
-            :disabled="approvalStore.decidingId === approval.approval_id"
-            @click="decide(approval, CodexApprovalDecision.Decline)"
-          >
-            拒绝
-          </BaseButton>
-          <BaseButton
-            :disabled="
-              approval.risk_level === CodexApprovalRiskLevel.High ||
-              approvalStore.decidingId === approval.approval_id
-            "
-            @click="requestAccept(approval)"
-          >
-            允许一次
-          </BaseButton>
-        </div>
-      </article>
+      </section>
     </div>
-
-    <BaseModal v-if="stepUpApproval" title="增强验证" @close="closeStepUp">
-      <form class="grid gap-4" @submit.prevent="submitStepUp">
-        <p class="m-0 text-sm text-ink-muted">
-          请输入当前账号密码确认这次高风险操作。密码只在本次请求中使用。
-        </p>
-        <BaseInput
-          v-model="stepUpPassword"
-          type="password"
-          autocomplete="current-password"
-          label="账号密码"
-        />
-        <AppAlert
-          v-if="stepUpError"
-          variant="danger"
-          title="验证失败"
-          :description="stepUpError"
-        />
-        <div class="flex justify-end gap-2">
-          <BaseButton type="button" variant="secondary" @click="closeStepUp">
-            取消
-          </BaseButton>
-          <BaseButton
-            type="submit"
-            :disabled="stepUpSubmitting || !stepUpPassword"
-          >
-            确认
-          </BaseButton>
-        </div>
-      </form>
-    </BaseModal>
   </section>
 </template>
 
 <script setup lang="ts">
+import { CheckCheck } from '@lucide/vue'
 import {
   CodexApprovalDecision,
+  CodexApprovalDecisionState,
+  CodexApprovalKind,
   CodexApprovalRiskLevel,
+  CodexApprovalState,
   type CodexApproval,
 } from '~/types/codex-approval'
-import { AuthScope, AuthStepUpPurpose } from '~/types/auth'
+import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
 import { LOGIN_ROUTE } from '~/types/routes'
 
+interface ApprovalGroup {
+  key: string
+  label: string
+  items: CodexApproval[]
+  canApproveReadOnly: boolean
+  submitting: boolean
+}
+
+interface ApprovalPresentation {
+  label: string
+}
+
+const approvalDecisionPresentation = {
+  [CodexApprovalDecision.Accept]: { label: '已允许' },
+  [CodexApprovalDecision.Decline]: { label: '已拒绝' },
+  [CodexApprovalDecision.Cancel]: { label: '已取消' },
+} satisfies Record<CodexApprovalDecision, ApprovalPresentation>
+
+const approvalStatePresentation = {
+  [CodexApprovalState.Pending]: { label: '等待处理' },
+  [CodexApprovalState.Claimed]: { label: '正在交付' },
+  [CodexApprovalState.Applied]: { label: '已交付' },
+  [CodexApprovalState.DeliveryFailed]: { label: '交付失败' },
+  [CodexApprovalState.Expired]: { label: '已过期' },
+  [CodexApprovalState.Cancelled]: { label: '已取消交付' },
+} satisfies Record<CodexApprovalState, ApprovalPresentation>
+
 definePageMeta({
+  path: '/codex/approval-center',
   layout: 'codex',
   requiresAuth: true,
   redirectTo: LOGIN_ROUTE,
@@ -165,50 +127,54 @@ definePageMeta({
 
 const approvalStore = useCodexApprovalsStore()
 const authStore = useAuthStore()
-const stepUpApproval = ref<CodexApproval | null>(null)
-const stepUpPassword = ref('')
-const stepUpError = ref('')
-const stepUpSubmitting = ref(false)
-const decide = async (
-  approval: CodexApproval,
-  decision: CodexApprovalDecision,
-  stepUpToken?: string,
-): Promise<void> => {
-  await approvalStore.decide(approval, decision, stepUpToken)
-}
 
-const requestAccept = (approval: CodexApproval): void => {
-  if (approval.risk_level === CodexApprovalRiskLevel.High) {
-    stepUpApproval.value = approval
-    stepUpPassword.value = ''
-    stepUpError.value = ''
-    return
+const isSubmitting = (approval: CodexApproval): boolean =>
+  approvalStore.decisionStateById[approval.approval_id] ===
+  CodexApprovalDecisionState.Submitting
+
+const resolvedDecisionLabel = (approval: CodexApproval): string =>
+  approval.decision
+    ? approvalDecisionPresentation[approval.decision].label
+    : approval.state === CodexApprovalState.Expired
+      ? '未处理'
+      : approvalStatePresentation[approval.state].label
+
+const approvalGroups = computed<ApprovalGroup[]>(() => {
+  const groups = new Map<string, CodexApproval[]>()
+  for (const approval of approvalStore.pending) {
+    const key = approval.turn_id || approval.approval_id
+    groups.set(key, [...(groups.get(key) ?? []), approval])
   }
-  void decide(approval, CodexApprovalDecision.Accept)
-}
+  return [...groups.entries()].map(([key, items]) => ({
+    key,
+    label: items[0]?.turn_id ? '本轮审批' : '独立审批',
+    items,
+    canApproveReadOnly:
+      items.length > 1 &&
+      authStore.canScope(AuthScope.CodexTerminal) &&
+      items.every(
+        (approval) =>
+          approval.approval_kind === CodexApprovalKind.Command &&
+          approval.risk_level === CodexApprovalRiskLevel.Normal &&
+          approval.display_summary.read_only,
+      ),
+    submitting: items.some(isSubmitting),
+  }))
+})
 
-const closeStepUp = (): void => {
-  stepUpApproval.value = null
-  stepUpPassword.value = ''
-  stepUpError.value = ''
-}
-
-const submitStepUp = async (): Promise<void> => {
-  if (!stepUpApproval.value) return
-  stepUpSubmitting.value = true
-  stepUpError.value = ''
-  try {
-    const grant = await authStore.issueStepUpGrant(
-      stepUpPassword.value,
-      AuthStepUpPurpose.CodexHighRiskApproval,
-    )
-    await decide(stepUpApproval.value, CodexApprovalDecision.Accept, grant)
-    closeStepUp()
-  } catch (error) {
-    stepUpError.value =
-      error instanceof Error ? error.message : '增强验证失败。'
-  } finally {
-    stepUpSubmitting.value = false
+const approveReadOnlyGroup = async (items: CodexApproval[]): Promise<void> => {
+  for (const approval of items) {
+    if (
+      approvalStore.approvalsById[approval.approval_id]?.state !==
+      CodexApprovalState.Pending
+    ) {
+      continue
+    }
+    try {
+      await approvalStore.decide(approval, CodexApprovalDecision.Accept)
+    } catch {
+      return
+    }
   }
 }
 

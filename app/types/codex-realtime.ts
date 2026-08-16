@@ -1,8 +1,8 @@
 import type { CodexHost, CodexHostStatus } from './codex-host'
 import type {
   CodexDiffSnapshot,
-  CodexTimelineItem,
   CodexPlanStep,
+  CodexTimelineItem,
 } from './codex-item'
 import type { CodexThread, CodexThreadHistoryStatus } from './codex-thread'
 import type { CodexTurn } from './codex-turn'
@@ -34,30 +34,55 @@ export enum CodexRealtimeEventType {
   ProtocolWarning = 'protocol.warning',
 }
 
-export interface CodexConnectionReadyPayload {
+export interface CodexRealtimeEventHeader {
+  kind: 'codex_realtime_event'
+  schema_version: typeof CODEX_REALTIME_SCHEMA_VERSION
+  stream_epoch: string
+  cursor?: string | null
+  event_id: string
+  occurred_at: string
+  host_id: string
+  workspace_id?: string | null
+  thread_id?: string | null
+  turn_id?: string | null
+  item_id?: string | null
+  detail_kind: CodexRealtimeEventType
+}
+
+interface CodexRealtimeDetailBase {
+  schema_version: typeof CODEX_REALTIME_SCHEMA_VERSION
+}
+
+export interface CodexConnectionReadyDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ConnectionReady
   heartbeat_interval: number
   server_time: string
 }
 
-export interface CodexConnectionHeartbeatPayload {
+export interface CodexConnectionHeartbeatDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ConnectionHeartbeat
   server_time: string
 }
 
-export interface CodexHostSnapshotPayload {
+export interface CodexHostSnapshotDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.HostSnapshot
   hosts: CodexHost[]
 }
 
-export interface CodexHostStatusPayload {
+export interface CodexHostStatusDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.HostStatusChanged
   host_id: string
   status: CodexHostStatus
   last_seen_at?: string | null
 }
 
-export interface CodexWorkspaceSnapshotPayload {
+export interface CodexWorkspaceSnapshotDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.WorkspaceSnapshot
   workspaces: CodexWorkspace[]
 }
 
-export interface CodexThreadSnapshotPayload {
+export interface CodexThreadSnapshotDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ThreadSnapshot
   thread: CodexThread
   turns: CodexTurn[]
   items: CodexTimelineItem[]
@@ -66,90 +91,115 @@ export interface CodexThreadSnapshotPayload {
   append_history?: boolean
 }
 
-export interface CodexThreadUpdatedPayload {
+export interface CodexThreadUpdatedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ThreadUpdated
   thread: Pick<CodexThread, 'host_id' | 'workspace_id' | 'upstream_thread_id'> &
     Partial<CodexThread>
 }
 
-export interface CodexTurnEventPayload {
+export interface CodexTurnStartedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnStarted
   turn: CodexTurn
 }
 
-export interface CodexPlanUpdatedPayload {
+export interface CodexTurnCompletedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnCompleted
+  turn: CodexTurn
+}
+
+export interface CodexTurnFailedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnFailed
+  turn: CodexTurn
+}
+
+export interface CodexTurnInterruptedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnInterrupted
+  turn: CodexTurn
+}
+
+export type CodexTurnEventDetail =
+  | CodexTurnStartedDetail
+  | CodexTurnCompletedDetail
+  | CodexTurnFailedDetail
+  | CodexTurnInterruptedDetail
+
+export interface CodexPlanUpdatedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnPlanUpdated
   item_id: string
   thread_id: string
   turn_id: string | null
-  explanation?: string
+  explanation: string
   steps: CodexPlanStep[]
 }
 
-export interface CodexDiffUpdatedPayload {
+export interface CodexDiffUpdatedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.TurnDiffUpdated
   item_id: string
   thread_id: string
   turn_id: string | null
   diff: CodexDiffSnapshot
 }
 
-export interface CodexItemUpsertPayload {
+export interface CodexItemUpsertDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ItemUpsert
   item: CodexTimelineItem
 }
 
-export interface CodexItemDeltaPayload {
+export interface CodexItemDeltaDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ItemDelta
   item_id: string
   thread_id: string
   turn_id: string | null
   delta: string
 }
 
-export interface CodexGapPayload {
+export interface CodexGapDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.StreamGapDetected
   reason: string
-  snapshot_required?: boolean
+  snapshot_required: boolean
+  server_time?: string | null
 }
 
-export interface CodexProtocolWarningPayload {
+export interface CodexProtocolWarningDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ProtocolWarning
   warning: string
 }
 
-export interface CodexApprovalEventPayload {
+export interface CodexApprovalOpenedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ApprovalOpened
   approval: CodexApproval
 }
 
-export interface CodexRealtimePayloadMap {
-  [CodexRealtimeEventType.ConnectionReady]: CodexConnectionReadyPayload
-  [CodexRealtimeEventType.ConnectionHeartbeat]: CodexConnectionHeartbeatPayload
-  [CodexRealtimeEventType.HostSnapshot]: CodexHostSnapshotPayload
-  [CodexRealtimeEventType.HostStatusChanged]: CodexHostStatusPayload
-  [CodexRealtimeEventType.WorkspaceSnapshot]: CodexWorkspaceSnapshotPayload
-  [CodexRealtimeEventType.ThreadSnapshot]: CodexThreadSnapshotPayload
-  [CodexRealtimeEventType.ThreadUpdated]: CodexThreadUpdatedPayload
-  [CodexRealtimeEventType.TurnStarted]: CodexTurnEventPayload
-  [CodexRealtimeEventType.TurnCompleted]: CodexTurnEventPayload
-  [CodexRealtimeEventType.TurnFailed]: CodexTurnEventPayload
-  [CodexRealtimeEventType.TurnInterrupted]: CodexTurnEventPayload
-  [CodexRealtimeEventType.TurnPlanUpdated]: CodexPlanUpdatedPayload
-  [CodexRealtimeEventType.TurnDiffUpdated]: CodexDiffUpdatedPayload
-  [CodexRealtimeEventType.ItemUpsert]: CodexItemUpsertPayload
-  [CodexRealtimeEventType.ItemDelta]: CodexItemDeltaPayload
-  [CodexRealtimeEventType.ApprovalOpened]: CodexApprovalEventPayload
-  [CodexRealtimeEventType.ApprovalResolved]: CodexApprovalEventPayload
-  [CodexRealtimeEventType.StreamGapDetected]: CodexGapPayload
-  [CodexRealtimeEventType.ProtocolWarning]: CodexProtocolWarningPayload
+export interface CodexApprovalResolvedDetail extends CodexRealtimeDetailBase {
+  kind: CodexRealtimeEventType.ApprovalResolved
+  approval: CodexApproval
 }
 
+export type CodexApprovalEventDetail =
+  | CodexApprovalOpenedDetail
+  | CodexApprovalResolvedDetail
+
+export type CodexRealtimeEventDetail =
+  | CodexConnectionReadyDetail
+  | CodexConnectionHeartbeatDetail
+  | CodexHostSnapshotDetail
+  | CodexHostStatusDetail
+  | CodexWorkspaceSnapshotDetail
+  | CodexThreadSnapshotDetail
+  | CodexThreadUpdatedDetail
+  | CodexTurnEventDetail
+  | CodexPlanUpdatedDetail
+  | CodexDiffUpdatedDetail
+  | CodexItemUpsertDetail
+  | CodexItemDeltaDetail
+  | CodexGapDetail
+  | CodexProtocolWarningDetail
+  | CodexApprovalEventDetail
+
 export type CodexRealtimeEvent = {
-  [TType in CodexRealtimeEventType]: {
-    kind: 'codex_realtime_event'
-    schema_version: typeof CODEX_REALTIME_SCHEMA_VERSION
-    stream_epoch: string
-    cursor?: string | null
-    event_id: string
-    host_id: string
-    workspace_id?: string | null
-    thread_id?: string | null
-    turn_id?: string | null
-    item_id?: string | null
-    type: TType
-    payload: CodexRealtimePayloadMap[TType]
+  [TKind in CodexRealtimeEventType]: {
+    header: CodexRealtimeEventHeader & { detail_kind: TKind }
+    detail: Extract<CodexRealtimeEventDetail, { kind: TKind }>
   }
 }[CodexRealtimeEventType]
 

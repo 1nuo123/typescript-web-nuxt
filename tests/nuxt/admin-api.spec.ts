@@ -463,6 +463,37 @@ describe('admin API clients', () => {
     )
   })
 
+  it('uses backend PUT method and confirmation for user scope replacement', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        adminDetailEnvelope(
+          { subject_id: 'subject-1' },
+          AdminIdentityPayloadKind.User,
+          AdminIdentityOperationName.UserScopeReplace,
+        ),
+      )
+    vi.stubGlobal('$fetch', fetchMock)
+    applyAdminSession()
+
+    await createAdminIdentityClient().users.replaceScopes('subject-1', {
+      scope_codes: ['codex:read', 'codex:operate'],
+      confirmation: ADMIN_IDENTITY_GRANT_CONFIRMATION_PHRASE,
+    })
+
+    const [, options] = fetchMock.mock.calls[0] ?? []
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/admin/users/subject-1/scopes')
+    expect(options.method).toBe('PUT')
+    expect(options.body.detail.scope_codes).toEqual([
+      'codex:read',
+      'codex:operate',
+    ])
+    expect(options.body.detail.confirmation).toBe(
+      ADMIN_IDENTITY_GRANT_CONFIRMATION_PHRASE,
+    )
+  })
+
   it('keeps security protection on plain response envelopes', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       header: successHeader,

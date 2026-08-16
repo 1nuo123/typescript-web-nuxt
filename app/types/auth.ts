@@ -35,6 +35,11 @@ export enum AuthScope {
   CodexOperate = 'codex:operate',
   CodexApprove = 'codex:approve',
   CodexHostManage = 'codex:host_manage',
+  CodexFiles = 'codex:files',
+  CodexTerminal = 'codex:terminal',
+  CodexNetwork = 'codex:network',
+  CodexFullAccess = 'codex:full_access',
+  CodexAdminManage = 'codex:admin_manage',
 }
 
 export enum AdminBoundaryPolicy {

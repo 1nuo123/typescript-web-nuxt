@@ -16,6 +16,7 @@ import {
   AdminAuditPayloadKind,
 } from '~/types/admin-audit'
 import {
+  ADMIN_IDENTITY_GRANT_CONFIRMATION_PHRASE,
   AdminIdentityOperationName,
   AdminIdentityPayloadKind,
 } from '~/types/admin-identity'
@@ -218,6 +219,94 @@ describe('admin pages', () => {
       page_size: 20,
       offset: 0,
     })
+    component.unmount()
+  })
+
+  it('renders and replaces direct user scopes while preserving effective scopes', async () => {
+    const initialUser = {
+      kind: AdminIdentityPayloadKind.User,
+      schema_version: ADMIN_SCHEMA_VERSION,
+      subject_id: 'subject-2',
+      username: 'operator',
+      is_active: true,
+      role_keys: ['registered_user'],
+      direct_scope_codes: ['codex:read'],
+      effective_scope_codes: ['auth:read', 'codex:read'],
+    }
+    const updatedUser = {
+      ...initialUser,
+      direct_scope_codes: ['codex:read', 'codex:operate'],
+      effective_scope_codes: ['auth:read', 'codex:read', 'codex:operate'],
+    }
+    const listEnvelope = (user: typeof initialUser) =>
+      adminDetailEnvelope(
+        {
+          kind: AdminIdentityPayloadKind.UserList,
+          schema_version: ADMIN_SCHEMA_VERSION,
+          users: [user],
+          page_size: 20,
+          offset: 0,
+          total: 1,
+        },
+        AdminIdentityPayloadKind.UserList,
+        AdminIdentityOperationName.UserList,
+      )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(listEnvelope(initialUser))
+      .mockResolvedValueOnce(
+        adminDetailEnvelope(
+          updatedUser,
+          AdminIdentityPayloadKind.User,
+          AdminIdentityOperationName.UserScopeReplace,
+        ),
+      )
+      .mockResolvedValueOnce(listEnvelope(updatedUser))
+    vi.stubGlobal('$fetch', fetchMock)
+    applyAdminSession([AuthScope.AuthRead, AuthScope.AuthManage])
+
+    const component = await mountSuspended(UsersPage)
+    await flushPromises()
+
+    expect(component.text()).toContain('codex:read')
+    expect(component.text()).toContain('auth:read, codex:read')
+
+    const selectButton = component
+      .findAll('button')
+      .find((button) => button.text() === '选择')
+    expect(selectButton).toBeDefined()
+    await selectButton!.trigger('click')
+
+    const scopeInput = component
+      .findAll('label')
+      .find((label) => label.text().includes('直接 scopes'))
+      ?.find('input')
+    const scopeConfirmationInput = component
+      .findAll('label')
+      .find((label) => label.text().includes('直接 scope 替换属高危授权变更'))
+      ?.find('input')
+    expect(scopeInput?.exists()).toBe(true)
+    expect(scopeConfirmationInput?.exists()).toBe(true)
+    await scopeInput!.setValue('codex:read, codex:operate, codex:read')
+    await scopeConfirmationInput!.setValue(
+      ADMIN_IDENTITY_GRANT_CONFIRMATION_PHRASE,
+    )
+
+    const replaceButton = component
+      .findAll('button')
+      .find((button) => button.text() === '替换直接 scopes')
+    expect(replaceButton).toBeDefined()
+    await replaceButton!.trigger('click')
+    await flushPromises()
+
+    const [, options] = fetchMock.mock.calls[1] ?? []
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/admin/users/subject-2/scopes')
+    expect(options.method).toBe('PUT')
+    expect(options.body.detail.scope_codes).toEqual([
+      'codex:read',
+      'codex:operate',
+    ])
+    expect(component.text()).toContain('用户直接 scopes 已替换。')
     component.unmount()
   })
 

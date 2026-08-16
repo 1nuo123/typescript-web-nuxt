@@ -80,13 +80,12 @@ type ModalSize = 'sm' | 'md' | 'lg'
 
 const props = withDefaults(
   defineProps<{
-    open?: boolean
+    open: boolean
     title?: string
     description?: string
     size?: ModalSize
   }>(),
   {
-    open: false,
     title: '',
     description: '',
     size: 'md',

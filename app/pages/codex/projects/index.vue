@@ -18,7 +18,11 @@
         class="rounded-lg border border-line bg-surface p-4 shadow-card transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-pop"
       >
         <NuxtLink
-          :to="buildCodexProjectRoute(workspace.workspace_id)"
+          :to="
+            buildCodexProjectRoute(workspace.workspace_id, {
+              hostId: workspace.host_id,
+            })
+          "
           class="group flex items-start gap-3 no-underline"
         >
           <span

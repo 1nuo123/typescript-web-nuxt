@@ -143,10 +143,11 @@ import {
   UserPlus,
   UserRound,
 } from '@lucide/vue'
-import { AuthSessionStatus } from '~/types/auth'
+import { AuthScope, AuthSessionStatus } from '~/types/auth'
 import {
   ACCOUNT_ROUTE,
   ADMIN_ROUTE_PREFIX,
+  CODEX_TASKS_ROUTE,
   LOGIN_ROUTE,
   REGISTER_ROUTE,
 } from '~/types/routes'
@@ -221,6 +222,16 @@ const quickActions = computed(() => {
   }
 
   return [
+    ...(authStore.canScope(AuthScope.CodexRead)
+      ? [
+          {
+            title: 'Codex',
+            description: '进入远程工作台并连接你的电脑',
+            to: CODEX_TASKS_ROUTE,
+            icon: UserRound,
+          },
+        ]
+      : []),
     {
       title: '个人中心',
       description: '查看账号与权限信息',

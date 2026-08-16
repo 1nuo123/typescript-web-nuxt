@@ -9,7 +9,7 @@ import {
 
 export const CODEX_NAVIGATION_ITEMS: AppNavItem[] = [
   {
-    label: '任务',
+    label: '会话',
     to: CODEX_TASKS_ROUTE,
     exact: false,
     requiresAuth: true,

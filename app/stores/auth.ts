@@ -41,6 +41,7 @@ const ADMIN_BOUNDARY_REQUIREMENTS: Record<
 }
 
 const AUTH_REFRESH_LOCKS = new WeakMap<object, Promise<boolean>>()
+const AUTH_INIT_LOCKS = new WeakMap<object, Promise<void>>()
 interface AuthStoreState {
   status: AuthStatus
   accessToken: string
@@ -75,13 +76,20 @@ export const useAuthStore = defineStore('auth', {
       if (this.initialized) {
         return
       }
+      const pendingInit = AUTH_INIT_LOCKS.get(this)
+      if (pendingInit) return pendingInit
 
-      this.initialized = true
-      try {
-        await this.refresh()
-      } catch {
-        this.clearSession(AuthStatus.Anonymous)
-      }
+      const initRequest = (async () => {
+        try {
+          await this.refresh()
+        } catch {
+          this.clearSession(AuthStatus.Anonymous)
+        } finally {
+          this.initialized = true
+        }
+      })().finally(() => AUTH_INIT_LOCKS.delete(this))
+      AUTH_INIT_LOCKS.set(this, initRequest)
+      return initRequest
     },
 
     async login(username: string, password: string) {
@@ -261,11 +269,6 @@ export const useAuthStore = defineStore('auth', {
 
       if (fromRefresh && this.isTokenExpiredError(error)) {
         this.clearSession(AuthStatus.Anonymous)
-        return
-      }
-
-      if (error.statusCode === 403) {
-        this.status = AuthStatus.Forbidden
         return
       }
 

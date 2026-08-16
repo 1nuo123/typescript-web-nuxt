@@ -3,6 +3,7 @@ import {
   CodexRealtimeContractError,
   validateCodexRealtimeEvent,
 } from '~/utils/codex-event-validator'
+import { normalizeApiError } from '~/utils/errors'
 
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000]
 const RECONNECT_JITTER_RATIO = 0.2
@@ -10,6 +11,26 @@ const DEFAULT_IDLE_TIMEOUT_MS = 90_000
 const NORMAL_CLOSE_CODE = 1_000
 const OFFLINE_CLOSE_CODE = 4_001
 const PROTOCOL_CLOSE_CODE = 4_002
+const RETRIABLE_HTTP_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504])
+
+const isRetriableRealtimeError = (error: unknown): boolean => {
+  const normalized = normalizeApiError(error)
+  return RETRIABLE_HTTP_STATUS_CODES.has(normalized.statusCode)
+}
+
+const realtimeErrorMessage = (error: unknown): string => {
+  const normalized = normalizeApiError(error)
+  if (normalized.statusCode === 401) {
+    return '登录状态已失效，请重新登录后继续。'
+  }
+  if (normalized.statusCode === 403) {
+    return 'Codex实时连接被拒绝，请检查来源配置或账号权限。'
+  }
+  if (normalized.statusCode >= 400 && normalized.statusCode < 500) {
+    return normalized.message || 'Codex实时请求配置无效。'
+  }
+  return 'Codex实时服务暂不可用，正在重试。'
+}
 
 export interface CodexWebSocketUrlInput {
   pageUrl: string
@@ -62,11 +83,13 @@ export const useCodexRealtime = () => {
   const realtimeStore = useCodexRealtimeStore()
   const sessionStore = useCodexSessionStore()
   const approvalsStore = useCodexApprovalsStore()
+  const authStore = useAuthStore()
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let manuallyClosed = false
   let protocolCompatible = true
+  let authRecoveryInFlight: Promise<boolean> | null = null
 
   const clearTimers = (): void => {
     if (reconnectTimer) clearTimeout(reconnectTimer)
@@ -88,6 +111,18 @@ export const useCodexRealtime = () => {
     } catch {
       realtimeStore.markError('Codex权威状态刷新失败。')
     }
+  }
+
+  const recoverAuthentication = async (): Promise<boolean> => {
+    if (!authRecoveryInFlight) {
+      authRecoveryInFlight = authStore
+        .refresh()
+        .catch(() => false)
+        .finally(() => {
+          authRecoveryInFlight = null
+        })
+    }
+    return authRecoveryInFlight
   }
 
   const scheduleReconnect = (): void => {
@@ -163,10 +198,19 @@ export const useCodexRealtime = () => {
       socket.addEventListener('error', () => {
         realtimeStore.markError('Codex实时连接发生网络错误。')
       })
-    } catch {
+    } catch (error) {
       socket = null
-      realtimeStore.markError('Codex实时票据或连接创建失败。')
-      scheduleReconnect()
+      const normalized = normalizeApiError(error)
+      if (normalized.statusCode === 401) {
+        if (await recoverAuthentication()) {
+          if (!manuallyClosed) void connect()
+          return
+        }
+        realtimeStore.markError('登录状态已失效，请重新登录后继续。')
+        return
+      }
+      realtimeStore.markError(realtimeErrorMessage(normalized))
+      if (isRetriableRealtimeError(error)) scheduleReconnect()
     }
   }
 

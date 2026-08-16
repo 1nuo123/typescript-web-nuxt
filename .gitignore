@@ -27,3 +27,8 @@ logs
 # Playwright
 playwright-report/
 test-results/
+.playwright-mcp/
+
+# Local generated artifacts
+coverage/
+.codex-tmp/

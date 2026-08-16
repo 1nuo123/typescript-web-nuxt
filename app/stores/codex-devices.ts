@@ -75,6 +75,15 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
       }
     },
 
+    setVerificationFromIntent(
+      userCode: string,
+      envelope: DeviceAuthorizationEnvelope,
+    ): DeviceAuthorizationView {
+      this.lastError = null
+      this.verification = toVerificationView(userCode, envelope)
+      return this.verification
+    },
+
     async decideAuthorization(
       decision: DeviceAuthorizationDecision,
     ): Promise<void> {
@@ -106,14 +115,23 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
     },
 
     async renameHost(host: CodexHost, displayName: string): Promise<void> {
-      const updated = await createCodexHostsClient().rename(
-        host.host_id,
-        host.version,
-        { display_name: displayName.trim() },
-      )
-      this.hosts = this.hosts.map((item) =>
-        item.host_id === updated.host_id ? updated : item,
-      )
+      try {
+        const updated = await createCodexHostsClient().rename(
+          host.host_id,
+          host.version,
+          { display_name: displayName.trim() },
+        )
+        this.hosts = this.hosts.map((item) =>
+          item.host_id === updated.host_id ? updated : item,
+        )
+      } catch (error) {
+        const normalized = error as ApiErrorPayload
+        this.lastError = normalized
+        if (normalized.errorCode === CodexDeviceErrorCode.VersionConflict) {
+          await this.loadHosts()
+        }
+        throw normalized
+      }
     },
 
     async revokeHost(host: CodexHost, password: string): Promise<void> {
@@ -121,14 +139,11 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
         password,
         CODEX_HOST_REVOKE_PURPOSE,
       )
-      const updated = await createCodexHostsClient().revoke(
-        host.host_id,
-        host.version,
-        { step_up_token: token },
-      )
-      this.hosts = this.hosts.map((item) =>
-        item.host_id === updated.host_id ? updated : item,
-      )
+      await createCodexHostsClient().revoke(host.host_id, host.version, {
+        step_up_token: token,
+      })
+      this.hosts = this.hosts.filter((item) => item.host_id !== host.host_id)
+      useCodexSessionStore().removeHost(host.host_id)
     },
 
     errorLabel(): string | null {

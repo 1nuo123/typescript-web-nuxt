@@ -12,6 +12,9 @@ export enum CodexCapabilityCode {
   ThreadRead = 'thread.read',
   ThreadStart = 'thread.start',
   ThreadResume = 'thread.resume',
+  ThreadNameSet = 'thread.name_set',
+  ThreadArchive = 'thread.archive',
+  ThreadUnarchive = 'thread.unarchive',
   ThreadDelete = 'thread.delete',
   ThreadCompact = 'thread.compact',
   TurnStart = 'turn.start',
@@ -71,6 +74,15 @@ export enum CodexApprovalPolicy {
   OnRequest = 'on-request',
   Never = 'never',
 }
+
+export const CODEX_SANDBOX_RESTRICTION_ORDER: readonly CodexSandboxMode[] = [
+  CodexSandboxMode.ReadOnly,
+  CodexSandboxMode.WorkspaceWrite,
+  CodexSandboxMode.DangerFullAccess,
+] as const
+
+export const CODEX_APPROVAL_RESTRICTION_ORDER: readonly CodexApprovalPolicy[] =
+  [CodexApprovalPolicy.Untrusted, CodexApprovalPolicy.OnRequest] as const
 
 export interface CodexHostCompatibilityDetail {
   state: CodexHostCompatibilityState

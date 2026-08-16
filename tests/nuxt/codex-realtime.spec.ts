@@ -23,6 +23,7 @@ const envelope = <T>(data: T) => ({
   },
   data,
 })
+const TEST_OCCURRED_AT = '2026-08-01T00:00:00.000Z'
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = []
@@ -95,28 +96,43 @@ describe('Codex realtime client', () => {
 
   it('detects an explicit stream gap and does not project it as product data', () => {
     const store = useCodexRealtimeStore()
-    const base = {
-      kind: 'codex_realtime_event' as const,
-      schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-      stream_epoch: 'epoch-1',
-      host_id: 'host-1',
-      type: CodexRealtimeEventType.ProtocolWarning,
-    } as const
     expect(
       store.acceptEvent({
-        ...base,
-        cursor: 'cursor-0',
-        event_id: 'event-0',
-        payload: { warning: 'first' },
+        header: {
+          kind: 'codex_realtime_event',
+          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+          stream_epoch: 'epoch-1',
+          host_id: 'host-1',
+          cursor: 'cursor-0',
+          event_id: 'event-0',
+          occurred_at: TEST_OCCURRED_AT,
+          detail_kind: CodexRealtimeEventType.ProtocolWarning,
+        },
+        detail: {
+          kind: CodexRealtimeEventType.ProtocolWarning,
+          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+          warning: 'first',
+        },
       }),
     ).toBe(CodexRealtimeApplyResult.NewStreamEpoch)
     expect(
       store.acceptEvent({
-        ...base,
-        cursor: null,
-        event_id: 'event-2',
-        type: CodexRealtimeEventType.StreamGapDetected,
-        payload: { reason: 'cursor_trimmed', snapshot_required: true },
+        header: {
+          kind: 'codex_realtime_event',
+          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+          stream_epoch: 'epoch-1',
+          host_id: 'host-1',
+          cursor: null,
+          event_id: 'event-2',
+          occurred_at: TEST_OCCURRED_AT,
+          detail_kind: CodexRealtimeEventType.StreamGapDetected,
+        },
+        detail: {
+          kind: CodexRealtimeEventType.StreamGapDetected,
+          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+          reason: 'cursor_trimmed',
+          snapshot_required: true,
+        },
       }),
     ).toBe(CodexRealtimeApplyResult.Gap)
     expect(store.gapDetected).toBe(true)
@@ -153,14 +169,19 @@ describe('Codex realtime client', () => {
       'message',
       new MessageEvent('message', {
         data: JSON.stringify({
-          kind: 'codex_realtime_event',
-          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-          stream_epoch: 'epoch-1',
-          cursor: null,
-          event_id: 'event-0',
-          host_id: 'host-1',
-          type: CodexRealtimeEventType.ConnectionReady,
-          payload: {
+          header: {
+            kind: 'codex_realtime_event',
+            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+            stream_epoch: 'epoch-1',
+            cursor: null,
+            event_id: 'event-0',
+            occurred_at: TEST_OCCURRED_AT,
+            host_id: 'host-1',
+            detail_kind: CodexRealtimeEventType.ConnectionReady,
+          },
+          detail: {
+            kind: CodexRealtimeEventType.ConnectionReady,
+            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
             heartbeat_interval: 10,
             server_time: '2026-08-01T00:00:00Z',
           },
@@ -176,14 +197,21 @@ describe('Codex realtime client', () => {
       'message',
       new MessageEvent('message', {
         data: JSON.stringify({
-          kind: 'codex_realtime_event',
-          schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-          stream_epoch: 'epoch-1',
-          cursor: '1-0',
-          event_id: 'event-1',
-          host_id: 'host-1',
-          type: CodexRealtimeEventType.ProtocolWarning,
-          payload: { warning: 'mapped warning' },
+          header: {
+            kind: 'codex_realtime_event',
+            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+            stream_epoch: 'epoch-1',
+            cursor: '1-0',
+            event_id: 'event-1',
+            occurred_at: TEST_OCCURRED_AT,
+            host_id: 'host-1',
+            detail_kind: CodexRealtimeEventType.ProtocolWarning,
+          },
+          detail: {
+            kind: CodexRealtimeEventType.ProtocolWarning,
+            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+            warning: 'mapped warning',
+          },
         }),
       }),
     )
@@ -219,5 +247,38 @@ describe('Codex realtime client', () => {
     await nextTick()
 
     expect(FakeWebSocket.instances[0]?.closeCalls[0]?.code).toBe(4_002)
+  })
+
+  it('does not retry a forbidden realtime ticket request', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      '$fetch',
+      vi.fn().mockRejectedValue({
+        statusCode: 403,
+        statusMessage: 'Forbidden',
+        data: {
+          header: { code: 'codex.state.conflict', message: 'Origin rejected' },
+          data: {
+            status_code: 403,
+            error_code: 'codex.state.conflict',
+          },
+        },
+      }),
+    )
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    })
+    const runtimeConfig = useRuntimeConfig()
+    runtimeConfig.public.codexFeatureEnabled = true
+
+    await mountSuspended(RealtimeHarness)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    expect(useCodexRealtimeStore().status).toBe(
+      CodexRealtimeConnectionStatus.Error,
+    )
+    expect(useCodexRealtimeStore().reconnectAttempt).toBe(0)
   })
 })

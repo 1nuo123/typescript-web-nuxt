@@ -1,5 +1,6 @@
 services:
   frontend:
+    image: typescript-web-nuxt:production-local
     ports: !reset []
     deploy:
       resources:

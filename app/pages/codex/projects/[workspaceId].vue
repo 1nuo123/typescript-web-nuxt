@@ -17,7 +17,7 @@
       </div>
       <BaseButton v-if="workspace" size="sm" @click="openTasks">
         <ListTodo class="size-4" aria-hidden="true" />
-        查看任务
+        查看会话
       </BaseButton>
     </header>
     <div
@@ -56,7 +56,7 @@ import { RuntimeFeatureFlag } from '~/types/app'
 import {
   LOGIN_ROUTE,
   CODEX_PROJECTS_ROUTE,
-  CODEX_TASKS_ROUTE,
+  buildCodexTasksRoute,
 } from '~/types/routes'
 
 definePageMeta({
@@ -71,16 +71,26 @@ definePageMeta({
 const route = useRoute()
 const sessionStore = useCodexSessionStore()
 const workspaceId = computed(() => String(route.params.workspaceId || ''))
+const hostId = computed(() =>
+  typeof route.query.hostId === 'string' ? route.query.hostId : undefined,
+)
 const workspace = computed(
   () => sessionStore.projection.workspacesById[workspaceId.value] ?? null,
 )
 const openTasks = async (): Promise<void> => {
   sessionStore.selectWorkspace(workspaceId.value)
-  await navigateTo(CODEX_TASKS_ROUTE)
+  await navigateTo(
+    buildCodexTasksRoute({
+      hostId: workspace.value?.host_id,
+      workspaceId: workspaceId.value,
+    }),
+  )
 }
 
 onMounted(async () => {
-  await sessionStore.refreshAuthority()
-  if (workspace.value) sessionStore.selectWorkspace(workspaceId.value)
+  await sessionStore.restoreRouteSelection({
+    hostId: hostId.value,
+    workspaceId: workspaceId.value,
+  })
 })
 </script>

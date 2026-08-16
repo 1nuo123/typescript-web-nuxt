@@ -19,7 +19,7 @@
     >
       <span class="flex items-center gap-2 px-1.5 text-xs text-ink-muted">
         <CornerDownLeft class="size-3.5" aria-hidden="true" />
-        <span v-if="activeTurn">指令会加入当前任务</span>
+        <span v-if="activeTurn">指令会加入当前会话</span>
         <span v-else class="hidden sm:inline">Ctrl/⌘ + Enter 发送</span>
       </span>
       <BaseButton
@@ -64,7 +64,7 @@ const placeholder = computed(() =>
   props.disabled
     ? '主机离线，草稿会保留在当前页面。'
     : props.activeTurn
-      ? '向正在运行的任务追加指令…'
+      ? '向正在运行的会话追加指令…'
       : '描述要在本机完成的工作…',
 )
 const submit = (): void => {

@@ -97,7 +97,7 @@ const VALID_API_TIMEOUT_MS = 2500
 const LINK_SELECTOR = 'a {'
 const LINK_UNDERLINE_RULE = 'text-decoration: underline;'
 const FOCUS_VISIBLE_SELECTOR = 'a:focus-visible'
-const FOCUS_OUTLINE_RULE = 'outline: 3px solid'
+const FOCUS_OUTLINE_RULE = 'outline: 2px solid color-mix('
 const READABLE_TEXT_FILE_PATHS = [
   README_PATH,
   NUXT_SPEC_PATH,

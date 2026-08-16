@@ -19,7 +19,13 @@
         复制错误标识
       </BaseButton>
       <BaseButton @click="handleClearError">
-        {{ displayError.statusCode >= 500 ? '重试当前页面' : '返回首页' }}
+        {{
+          displayError.statusCode === 401
+            ? '重新登录'
+            : displayError.statusCode >= 500
+              ? '重试当前页面'
+              : '返回首页'
+        }}
       </BaseButton>
     </EmptyState>
   </NuxtLayout>
@@ -45,6 +51,10 @@ const diagnosticText = computed(() => {
 })
 
 const handleClearError = () => {
+  if (displayError.value.statusCode === 401) {
+    clearError({ redirect: '/login' })
+    return
+  }
   if (displayError.value.statusCode >= 500) {
     clearError()
     return

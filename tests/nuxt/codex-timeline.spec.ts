@@ -4,6 +4,7 @@ import CodexCommandOutput from '~/components/codex/CodexCommandOutput.vue'
 import CodexDiffView from '~/components/codex/CodexDiffView.vue'
 import CodexTimelineItem from '~/components/codex/CodexTimelineItem.vue'
 import {
+  CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
   CodexDiffChangeKind,
   CodexDiffLineKind,
   CodexTimelineItemKind,
@@ -15,12 +16,19 @@ describe('Codex timeline item', () => {
     const component = await mountSuspended(CodexTimelineItem, {
       props: {
         item: {
-          item_id: 'item-1',
-          thread_id: 'thread-1',
-          turn_id: 'turn-1',
-          kind: CodexTimelineItemKind.AgentMessage,
-          status: CodexTimelineItemStatus.Completed,
-          text: '**done**',
+          header: {
+            item_id: 'item-1',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.AgentMessage,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.AgentMessage,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            text: '**done**',
+          },
         },
       },
     })
@@ -41,12 +49,19 @@ describe('Codex timeline item', () => {
     const component = await mountSuspended(CodexTimelineItem, {
       props: {
         item: {
-          item_id: 'item-long-markdown',
-          thread_id: 'thread-1',
-          turn_id: 'turn-1',
-          kind: CodexTimelineItemKind.AgentMessage,
-          status: CodexTimelineItemStatus.Completed,
-          text: `\`${'a'.repeat(512)}\``,
+          header: {
+            item_id: 'item-long-markdown',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.AgentMessage,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.AgentMessage,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            text: `\`${'a'.repeat(512)}\``,
+          },
         },
       },
     })
@@ -62,14 +77,21 @@ describe('Codex timeline item', () => {
     const component = await mountSuspended(CodexCommandOutput, {
       props: {
         item: {
-          item_id: 'item-command',
-          thread_id: 'thread-1',
-          turn_id: 'turn-1',
-          kind: CodexTimelineItemKind.Command,
-          status: CodexTimelineItemStatus.Completed,
-          command: 'x'.repeat(512),
-          output: 'y'.repeat(512),
-          exit_code: 0,
+          header: {
+            item_id: 'item-command',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.Command,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.Command,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            command: 'x'.repeat(512),
+            output: 'y'.repeat(512),
+            exit_code: 0,
+          },
         },
       },
     })
@@ -86,39 +108,46 @@ describe('Codex timeline item', () => {
     const component = await mountSuspended(CodexDiffView, {
       props: {
         item: {
-          item_id: 'item-diff',
-          thread_id: 'thread-1',
-          turn_id: 'turn-1',
-          kind: CodexTimelineItemKind.Diff,
-          status: CodexTimelineItemStatus.Completed,
-          diff: {
-            files: [
-              {
-                path: 'long.txt',
-                old_path: null,
-                change_kind: CodexDiffChangeKind.Modified,
-                binary: false,
-                large: false,
-                truncated: false,
-                hunks: [
-                  {
-                    header: '@@ -1 +1 @@',
-                    old_start: 1,
-                    new_start: 1,
-                    lines: [
-                      {
-                        kind: CodexDiffLineKind.Addition,
-                        content: `+${'z'.repeat(512)}`,
-                        old_line_number: null,
-                        new_line_number: 1,
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-            total_characters: 512,
-            truncated: false,
+          header: {
+            item_id: 'item-diff',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            diff: {
+              files: [
+                {
+                  path: 'long.txt',
+                  old_path: null,
+                  change_kind: CodexDiffChangeKind.Modified,
+                  binary: false,
+                  large: false,
+                  truncated: false,
+                  hunks: [
+                    {
+                      header: '@@ -1 +1 @@',
+                      old_start: 1,
+                      new_start: 1,
+                      lines: [
+                        {
+                          kind: CodexDiffLineKind.Addition,
+                          content: `+${'z'.repeat(512)}`,
+                          old_line_number: null,
+                          new_line_number: 1,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              total_characters: 512,
+              truncated: false,
+            },
           },
         },
       },
@@ -129,6 +158,92 @@ describe('Codex timeline item', () => {
     ).toContain('overflow-x-auto')
     expect(component.get('.break-all').text()).toContain('z'.repeat(512))
     expect(component.findAll('[role="tab"]')).toHaveLength(2)
+    component.unmount()
+  })
+
+  it('renders a large diff in bounded chunks', async () => {
+    const component = await mountSuspended(CodexDiffView, {
+      props: {
+        item: {
+          header: {
+            item_id: 'item-large-diff',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            diff: {
+              files: [
+                {
+                  path: 'large.txt',
+                  old_path: null,
+                  change_kind: CodexDiffChangeKind.Modified,
+                  binary: false,
+                  large: false,
+                  truncated: false,
+                  hunks: [
+                    {
+                      header: '@@ -1 +1 @@',
+                      old_start: 1,
+                      new_start: 1,
+                      lines: Array.from({ length: 805 }, (_, index) => ({
+                        kind: CodexDiffLineKind.Addition,
+                        content: `line-${index + 1}`,
+                        old_line_number: null,
+                        new_line_number: index + 1,
+                      })),
+                    },
+                  ],
+                },
+              ],
+              total_characters: 8_050,
+              truncated: false,
+            },
+          },
+        },
+      },
+    })
+
+    expect(component.findAll('.break-all')).toHaveLength(800)
+    const loadMore = component.findAll('button').at(2)
+    expect(loadMore).toBeDefined()
+    await loadMore?.trigger('click')
+    expect(component.findAll('.break-all')).toHaveLength(805)
+    component.unmount()
+  })
+
+  it('renders a stable empty state for a diff without files', async () => {
+    const component = await mountSuspended(CodexDiffView, {
+      props: {
+        item: {
+          header: {
+            item_id: 'item-empty-diff',
+            thread_id: 'thread-1',
+            turn_id: 'turn-1',
+            detail_kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            status: CodexTimelineItemStatus.Completed,
+          },
+          detail: {
+            kind: CodexTimelineItemKind.Diff,
+            schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+            diff: {
+              files: [],
+              total_characters: 0,
+              truncated: false,
+            },
+          },
+        },
+      },
+    })
+
+    expect(component.find('select').exists()).toBe(true)
+    expect(component.findAll('.break-all')).toHaveLength(0)
+    expect(component.find('section > p').exists()).toBe(true)
     component.unmount()
   })
 })

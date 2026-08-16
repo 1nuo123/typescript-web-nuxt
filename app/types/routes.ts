@@ -16,14 +16,49 @@ export const ADMIN_OPS_SECURITY_ROUTE = '/admin/ops/security'
 export const ADMIN_OPS_SYSTEM_ROUTE = '/admin/ops/system'
 export const CODEX_ROUTE_PREFIX = '/codex'
 export const CODEX_TASKS_ROUTE = '/codex/tasks'
-export const CODEX_APPROVALS_ROUTE = '/codex/approvals'
+export const CODEX_APPROVALS_ROUTE = '/codex/approval-center'
 export const CODEX_PROJECTS_ROUTE = '/codex/projects'
 export const CODEX_SETTINGS_ROUTE = '/codex/settings'
 
-export const buildCodexTaskRoute = (threadId: string) =>
-  `${CODEX_TASKS_ROUTE}/${encodeURIComponent(threadId)}`
+export interface CodexTaskRoute {
+  hostId?: string
+  workspaceId?: string
+  threadId?: string
+}
 
-export const buildCodexProjectRoute = (workspaceId: string) =>
-  `${CODEX_PROJECTS_ROUTE}/${encodeURIComponent(workspaceId)}`
+export const buildCodexTaskRoute = (
+  threadId: string,
+  route: Pick<CodexTaskRoute, 'hostId' | 'workspaceId'> = {},
+): string => {
+  const query = new URLSearchParams()
+  if (route.hostId) query.set('hostId', route.hostId)
+  if (route.workspaceId) query.set('workspaceId', route.workspaceId)
+  const queryString = query.toString()
+  return `${CODEX_TASKS_ROUTE}/${encodeURIComponent(threadId)}${
+    queryString ? `?${queryString}` : ''
+  }`
+}
+
+export const buildCodexTasksRoute = (
+  route: Pick<CodexTaskRoute, 'hostId' | 'workspaceId'> = {},
+): string => {
+  const query = new URLSearchParams()
+  if (route.hostId) query.set('hostId', route.hostId)
+  if (route.workspaceId) query.set('workspaceId', route.workspaceId)
+  const queryString = query.toString()
+  return `${CODEX_TASKS_ROUTE}${queryString ? `?${queryString}` : ''}`
+}
+
+export const buildCodexProjectRoute = (
+  workspaceId: string,
+  route: Pick<CodexTaskRoute, 'hostId'> = {},
+): string => {
+  const query = new URLSearchParams()
+  if (route.hostId) query.set('hostId', route.hostId)
+  const queryString = query.toString()
+  return `${CODEX_PROJECTS_ROUTE}/${encodeURIComponent(workspaceId)}${
+    queryString ? `?${queryString}` : ''
+  }`
+}
 
 export const AUTH_GUEST_ROUTES = [LOGIN_ROUTE, REGISTER_ROUTE] as const

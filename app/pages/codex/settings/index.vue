@@ -1,5 +1,8 @@
 <template>
-  <section class="mx-auto grid w-full min-w-0 max-w-4xl grid-cols-1 gap-8">
+  <section
+    class="mx-auto grid h-full w-full min-w-0 max-w-4xl grid-cols-1 gap-8 overflow-y-auto p-4 sm:p-6"
+  >
+    <CodexMobilePageHeader title="电脑设置" />
     <header
       class="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-center sm:justify-between"
     >
@@ -9,9 +12,9 @@
           {{ activeHostCount }} 台可用，{{ devicesStore.hosts.length }} 台已登记
         </p>
       </div>
-      <BaseButton @click="openAddDialog">
+      <BaseButton :loading="connecting" @click="connectComputer">
         <Plus class="size-4" aria-hidden="true" />
-        添加电脑
+        连接我的电脑
       </BaseButton>
     </header>
 
@@ -20,6 +23,12 @@
       variant="danger"
       title="电脑请求失败"
       :description="devicesStore.errorLabel() || ''"
+    />
+    <AppAlert
+      v-if="connectError"
+      variant="warning"
+      title="一键连接未完成"
+      :description="connectError"
     />
 
     <div
@@ -126,12 +135,17 @@
           </span>
         </div>
       </div>
+      <div>
+        <BaseButton size="sm" variant="ghost" @click="openAddDialog">
+          使用用户代码连接
+        </BaseButton>
+      </div>
     </section>
 
     <BaseModal
       :open="dialogMode === DialogMode.Add"
-      title="添加电脑"
-      description="输入 Agent 窗口显示的用户代码。"
+      title="使用用户代码连接"
+      description="仅在自定义 URI 无法启动或跨设备连接时使用。"
       size="sm"
       @close="closeDialog"
     >
@@ -157,6 +171,12 @@
     >
       <form class="grid gap-4" @submit.prevent="renameSelectedHost">
         <BaseInput v-model="displayName" label="电脑名称" />
+        <AppAlert
+          v-if="renameError"
+          variant="danger"
+          title="重命名失败"
+          :description="renameError"
+        />
         <BaseButton
           type="submit"
           :loading="dialogSubmitting"
@@ -215,6 +235,10 @@ import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
 import type { ApiErrorPayload } from '~/types/api'
 import {
+  CodexEnrollmentIntentState,
+  type CodexEnrollmentIntentIssuedDetail,
+} from '~/types/codex-enrollment'
+import {
   CodexHostCompatibilityState,
   CodexHostStatus,
   type CodexHost,
@@ -246,7 +270,12 @@ const userCode = ref('')
 const displayName = ref('')
 const password = ref('')
 const revokeError = ref('')
+const renameError = ref('')
 const dialogSubmitting = ref(false)
+const connecting = ref(false)
+const connectError = ref('')
+const URI_HANDLER_NAVIGATION_DELAY_MS = 1_200
+let navigationTimer: ReturnType<typeof setTimeout> | null = null
 
 const activeHostCount = computed(
   () =>
@@ -308,15 +337,41 @@ const openAddDialog = () => {
   dialogMode.value = DialogMode.Add
 }
 
+const connectComputer = async (): Promise<void> => {
+  connecting.value = true
+  connectError.value = ''
+  try {
+    const enrollment = await new CodexEnrollmentClient().create()
+    if (enrollment.detail.state !== CodexEnrollmentIntentState.Issued) {
+      throw new Error('设备注册意图状态无效。')
+    }
+    const detail = enrollment.detail as CodexEnrollmentIntentIssuedDetail
+    window.location.assign(detail.launch_uri)
+    navigationTimer = setTimeout(() => {
+      void navigateTo({
+        path: '/codex/verify-device',
+        query: { intent_id: enrollment.header.intent_id },
+      })
+    }, URI_HANDLER_NAVIGATION_DELAY_MS)
+  } catch (error) {
+    connectError.value =
+      error instanceof Error ? error.message : '无法启动本机 Agent。'
+  } finally {
+    connecting.value = false
+  }
+}
+
 const openRenameDialog = (host: CodexHost) => {
   selectedHost.value = host
   displayName.value = host.display_name
+  renameError.value = ''
   dialogMode.value = DialogMode.Rename
 }
 
 const openRevokeDialog = (host: CodexHost) => {
   selectedHost.value = host
   password.value = ''
+  renameError.value = ''
   revokeError.value = ''
   dialogMode.value = DialogMode.Revoke
 }
@@ -326,6 +381,7 @@ const closeDialog = () => {
   dialogMode.value = DialogMode.Closed
   selectedHost.value = null
   password.value = ''
+  renameError.value = ''
   revokeError.value = ''
 }
 
@@ -338,11 +394,19 @@ const openVerification = async () => {
 
 const renameSelectedHost = async () => {
   if (!selectedHost.value || !displayName.value.trim()) return
+  const selectedHostId = selectedHost.value.host_id
   dialogSubmitting.value = true
+  renameError.value = ''
   try {
     await devicesStore.renameHost(selectedHost.value, displayName.value)
     dialogSubmitting.value = false
     closeDialog()
+  } catch (error) {
+    selectedHost.value =
+      devicesStore.hosts.find((host) => host.host_id === selectedHostId) ??
+      selectedHost.value
+    const normalized = error as ApiErrorPayload
+    renameError.value = normalized.message || '电脑重命名失败。'
   } finally {
     dialogSubmitting.value = false
   }
@@ -365,5 +429,9 @@ const revokeSelectedHost = async () => {
 
 onMounted(async () => {
   await devicesStore.loadHosts()
+})
+
+onBeforeUnmount(() => {
+  if (navigationTimer !== null) clearTimeout(navigationTimer)
 })
 </script>

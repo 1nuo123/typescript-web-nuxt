@@ -80,7 +80,7 @@ import {
   type AppNavItem,
   type ThemePreference,
 } from '~/types/app'
-import { AdminBoundaryPolicy } from '~/types/auth'
+import { AuthRole } from '~/types/auth'
 import { ADMIN_ROUTE_PREFIX, LOGIN_ROUTE } from '~/types/routes'
 
 interface NavigationConfig {
@@ -125,10 +125,7 @@ const navigationItems = computed(() => {
     )
   })
   const routeScopedItems = runtimeEnabledItems.filter((item) => {
-    return (
-      isAdminRoute.value ||
-      item.adminBoundaryPolicy === AdminBoundaryPolicy.Public
-    )
+    return isAdminRoute.value || !item.requiredRoles?.includes(AuthRole.Admin)
   })
 
   return authStore.filterNavigationItems(routeScopedItems)

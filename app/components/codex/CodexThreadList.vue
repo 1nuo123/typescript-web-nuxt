@@ -1,7 +1,7 @@
 <template>
   <div
     class="overflow-hidden rounded-lg border border-line bg-surface"
-    aria-label="Codex 任务列表"
+    aria-label="Codex 会话列表"
   >
     <button
       v-for="thread in threads"
@@ -22,10 +22,10 @@
       </span>
       <span class="min-w-0 flex-1">
         <span class="block truncate text-sm font-medium text-ink">
-          {{ thread.display_name || '未命名任务' }}
+          {{ thread.display_name }}
         </span>
         <span class="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-          <span>{{ thread.model || '默认模型' }}</span>
+          <span>{{ thread.status }}</span>
           <span aria-hidden="true">/</span>
           <span>{{ statusLabel(thread.status) }}</span>
         </span>
@@ -39,7 +39,7 @@
       v-if="threads.length === 0"
       class="m-0 py-12 text-center text-sm text-ink-muted"
     >
-      当前项目还没有任务。
+      当前项目还没有会话。
     </p>
   </div>
 </template>

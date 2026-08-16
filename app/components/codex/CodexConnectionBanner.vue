@@ -20,7 +20,7 @@ const props = defineProps<{
 const message = computed(() => {
   if (props.error) return props.error
   if (props.status === CodexRealtimeConnectionStatus.Offline) {
-    return '网络已断开；本机任务会继续，联网后自动恢复权威状态。'
+    return '网络已断开；本机会话会继续，联网后自动恢复权威状态。'
   }
   if (props.status === CodexRealtimeConnectionStatus.Incompatible) {
     return '实时协议不兼容，请刷新客户端或检查服务端版本。'

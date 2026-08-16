@@ -13,8 +13,16 @@ export enum CodexThreadStatus {
   Idle = 'idle',
   Active = 'active',
   Interrupted = 'interrupted',
+  Failed = 'failed',
   Unknown = 'unknown',
   Archived = 'archived',
+}
+
+export enum CodexThreadTitleSource {
+  Manual = 'manual',
+  AppServer = 'app_server',
+  FirstUserMessage = 'first_user_message',
+  NewConversation = 'new_conversation',
 }
 
 export enum CodexThreadHistoryStatus {
@@ -30,20 +38,41 @@ export interface CodexThread {
   workspace_id: string
   owner_subject_id: string
   upstream_thread_id: string
-  display_name: string | null
+  display_name: string
+  title_source: CodexThreadTitleSource
   model: string | null
+  model_provider: string | null
   reasoning_effort: string | null
-  status: CodexThreadStatus | string
+  status: CodexThreadStatus
   active_turn_id: string | null
   archived: boolean
+  is_pinned: boolean
   source_kind: string | null
-  created_at: string | null
+  created_at: string
+  recency_at: string
   updated_at: string
   last_synced_at: string
 }
 
 export interface CodexThreadCollection {
   items: CodexThread[]
+  next_cursor: string | null
+}
+
+export interface CodexConversationListQuery {
+  workspace_id?: string | null
+  archived?: boolean
+  search_term?: string | null
+  cursor?: string | null
+  limit?: number
+}
+
+export interface CodexConversationRenameRequest {
+  display_name: string
+}
+
+export interface CodexConversationPinRequest {
+  is_pinned: boolean
 }
 
 export interface CodexThreadCreateRequest {

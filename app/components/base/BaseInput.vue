@@ -36,7 +36,14 @@
 </template>
 
 <script setup lang="ts">
-type InputType = 'text' | 'email' | 'password' | 'search' | 'url' | 'tel'
+type InputType =
+  | 'text'
+  | 'email'
+  | 'password'
+  | 'search'
+  | 'url'
+  | 'tel'
+  | 'datetime-local'
 
 const model = defineModel<string>({ default: '' })
 

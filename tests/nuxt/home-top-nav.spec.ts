@@ -6,6 +6,8 @@ import { AuthSessionStatus } from '~/types/auth'
 import { ACCOUNT_ROUTE, LOGIN_ROUTE, PUBLIC_HOME_ROUTE } from '~/types/routes'
 
 const navigateToMock = vi.hoisted(() => vi.fn((target: unknown) => target))
+const SCROLLED_BORDER_CLASS = 'border-line'
+const SCROLLED_SHADOW_CLASS = 'shadow-card'
 
 mockNuxtImport('navigateTo', () => navigateToMock)
 
@@ -83,13 +85,16 @@ describe('home top nav', () => {
     setScrollY(0)
     const wrapper = await mountSuspended(HomeTopNav)
 
-    expect(wrapper.classes()).not.toContain('home-top-nav--scrolled')
+    expect(wrapper.classes()).not.toContain(SCROLLED_BORDER_CLASS)
+    expect(wrapper.classes()).not.toContain(SCROLLED_SHADOW_CLASS)
 
     setScrollY(24)
     window.dispatchEvent(new Event('scroll'))
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    await flushPromises()
 
-    expect(wrapper.classes()).toContain('home-top-nav--scrolled')
+    expect(wrapper.classes()).toContain(SCROLLED_BORDER_CLASS)
+    expect(wrapper.classes()).toContain(SCROLLED_SHADOW_CLASS)
     wrapper.unmount()
   })
 })

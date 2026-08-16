@@ -4,12 +4,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { API_AUTHORIZATION_HEADER_NAME } from '~/types/api'
 import TasksPage from '~/pages/codex/tasks/index.vue'
 import CodexSettingsPage from '~/pages/codex/settings/index.vue'
+import VerifyDevicePage from '~/pages/codex/verify-device.vue'
 import CodexComposer from '~/components/codex/CodexComposer.vue'
+import CodexMobilePageHeader from '~/components/codex/CodexMobilePageHeader.vue'
+import CodexMobileRemoteNavigator from '~/components/codex/CodexMobileRemoteNavigator.vue'
 import {
   AUTH_BEARER_TOKEN_TYPE,
   AUTH_STEP_UP_PATH,
+  AuthScope,
   AuthSessionStatus,
 } from '~/types/auth'
+import { CodexDeviceErrorCode } from '~/types/codex-device'
+import { WorkspaceSelectionState } from '~/types/codex-workspace'
+import {
+  buildCodexProjectRoute,
+  buildCodexTaskRoute,
+  buildCodexTasksRoute,
+} from '~/types/routes'
 
 const AUTH_CREDENTIALS_INVALID_ERROR_CODE = 'auth.credentials.invalid'
 
@@ -86,6 +97,7 @@ const workspace = {
   repo_fingerprint: null,
   default_branch: 'main',
   enabled: true,
+  is_pinned: false,
   worktree_policy: {
     enabled: false,
     retention: 'keep_until_workspace_removed',
@@ -102,15 +114,33 @@ const thread = {
   owner_subject_id: 'subject-1',
   upstream_thread_id: 'thread-1',
   display_name: '完成 Phase 3',
+  title_source: 'app_server',
   model: 'gpt-5',
+  model_provider: 'openai',
   reasoning_effort: 'high',
   status: 'idle',
   active_turn_id: null,
   archived: false,
+  is_pinned: false,
   source_kind: 'app_server',
   created_at: '2026-08-01T00:00:00Z',
+  recency_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
   last_synced_at: '2026-08-01T00:00:00Z',
+}
+
+const applyCodexSession = (scopes: AuthScope[]): void => {
+  const authStore = useAuthStore()
+  authStore.status = AuthSessionStatus.Authenticated
+  authStore.accessToken = 'access-token'
+  authStore.principal = {
+    kind: 'authenticated_principal',
+    subject_id: 'subject-1',
+    username: 'codex-user',
+    roles: [],
+    scopes,
+    is_admin: false,
+  }
 }
 
 describe('Codex pages and mobile controls', () => {
@@ -122,29 +152,230 @@ describe('Codex pages and mobile controls', () => {
     useCodexUiStore().$reset()
   })
 
-  it('loads host, workspace and thread selections through their services', async () => {
-    const fetchMock = vi.fn((url: string) => {
+  it('loads host, workspace and thread selections without creating a conversation', async () => {
+    const fetchMock = vi.fn((url: string, _options?: { method?: string }) => {
       if (url === '/codex/hosts') return envelope({ items: [host] })
       if (url.endsWith('/workspaces')) return envelope({ items: [workspace] })
-      if (url.endsWith('/threads')) return envelope({ items: [thread] })
+      if (url.endsWith('/threads'))
+        return envelope({ items: [thread], next_cursor: null })
       throw new Error(`Unexpected URL: ${url}`)
     })
     vi.stubGlobal('$fetch', fetchMock)
-    const authStore = useAuthStore()
-    authStore.status = AuthSessionStatus.Authenticated
-    authStore.accessToken = 'access-token'
+    applyCodexSession([AuthScope.CodexRead])
 
     const component = await mountSuspended(TasksPage)
     await flushPromises()
 
-    expect(component.text()).toContain('ThinkPad · 在线')
-    expect(component.text()).toContain('FastAPI Backend · main')
-    expect(component.text()).toContain('完成 Phase 3')
+    expect(component.text()).toContain('FastAPI Backend')
+    expect(component.text()).toContain('main')
+    expect(component.text()).toContain('活动会话')
+    expect(component.text()).not.toContain('最近任务')
+    expect(component.text()).not.toContain('未命名任务')
+    expect(component.text()).not.toContain('默认模型')
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
       '/codex/hosts',
       '/codex/hosts/host-1/workspaces',
       '/codex/hosts/host-1/threads',
     ])
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, options]) =>
+          String(url).endsWith('/threads') &&
+          (options as { method?: string } | undefined)?.method === 'POST',
+      ),
+    ).toBe(false)
+    component.unmount()
+  })
+
+  it('restores the explicit host and workspace without selecting the first project', async () => {
+    const secondHost = { ...host, host_id: 'host-2', display_name: 'Desktop' }
+    const secondWorkspace = {
+      ...workspace,
+      workspace_id: 'workspace-2',
+      host_id: 'host-2',
+      display_name: 'Test Project',
+    }
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host, secondHost] })
+      if (url === '/codex/hosts/host-1/workspaces')
+        return envelope({ items: [workspace] })
+      if (url === '/codex/hosts/host-2/workspaces')
+        return envelope({ items: [secondWorkspace] })
+      if (url.endsWith('/threads'))
+        return envelope({ items: [], next_cursor: null })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const store = useCodexSessionStore()
+    const restored = await store.restoreRouteSelection({
+      hostId: 'host-2',
+      workspaceId: 'workspace-2',
+    })
+
+    expect(restored).toBe(true)
+    expect(store.selectedHostId).toBe('host-2')
+    expect(store.selectedWorkspaceId).toBe('workspace-2')
+    expect(store.workspaceSelectionState).toBe(WorkspaceSelectionState.Resolved)
+  })
+
+  it('rejects an invalid routed workspace instead of falling back to another project', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      if (url.endsWith('/workspaces')) return envelope({ items: [workspace] })
+      if (url.endsWith('/threads'))
+        return envelope({ items: [], next_cursor: null })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const store = useCodexSessionStore()
+    const restored = await store.restoreRouteSelection({
+      hostId: 'host-1',
+      workspaceId: 'revoked-workspace',
+    })
+
+    expect(restored).toBe(false)
+    expect(store.selectedWorkspaceId).toBeNull()
+    expect(store.workspaceSelectionState).toBe(WorkspaceSelectionState.Missing)
+    expect(store.selectionError).toContain('不可见')
+  })
+
+  it('requires an explicit host for a routed workspace', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const store = useCodexSessionStore()
+    const restored = await store.restoreRouteSelection({
+      workspaceId: 'workspace-1',
+    })
+
+    expect(restored).toBe(false)
+    expect(store.selectedWorkspaceId).toBeNull()
+    expect(store.selectionError).toContain('缺少可验证的主机定位信息')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses thread authority and rejects a mismatched workspace route', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      if (url.endsWith('/workspaces')) return envelope({ items: [workspace] })
+      if (url.endsWith('/threads'))
+        return envelope({ items: [thread], next_cursor: null })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+
+    const store = useCodexSessionStore()
+    const restored = await store.restoreRouteSelection({
+      hostId: 'host-1',
+      workspaceId: 'other-workspace',
+      threadId: 'thread-1',
+    })
+
+    expect(restored).toBe(false)
+    expect(store.selectedWorkspaceId).toBeNull()
+    expect(store.selectedThreadId).toBeNull()
+    expect(store.selectionError).toContain('不匹配')
+  })
+
+  it('builds task routes with authoritative host and workspace identifiers', () => {
+    expect(
+      buildCodexTaskRoute('thread-1', {
+        hostId: 'host-1',
+        workspaceId: 'workspace-1',
+      }),
+    ).toBe('/codex/tasks/thread-1?hostId=host-1&workspaceId=workspace-1')
+    expect(
+      buildCodexTasksRoute({
+        hostId: 'host-1',
+        workspaceId: 'workspace-1',
+      }),
+    ).toBe('/codex/tasks?hostId=host-1&workspaceId=workspace-1')
+    expect(buildCodexProjectRoute('workspace-1', { hostId: 'host-1' })).toBe(
+      '/codex/projects/workspace-1?hostId=host-1',
+    )
+  })
+
+  it('shows an online Agent as connected and keeps reinstall as a secondary action', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      if (url === '/codex/agent-release/current')
+        return envelope({
+          header: {
+            kind: 'codex_agent_release_manifest',
+            schema_version: '1.0',
+            channel: 'stable',
+          },
+          detail: {
+            version: '0.1.3',
+            download_url: 'https://downloads.acme.dev/CodexRemoteAgent.msi',
+            manifest_url: 'https://downloads.acme.dev/metadata/timestamp.json',
+            minimum_security_version: '0.1.3',
+          },
+        })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+    applyCodexSession([AuthScope.CodexHostManage])
+
+    const component = await mountSuspended(VerifyDevicePage)
+    await flushPromises()
+
+    expect(component.text()).toContain('Agent 已连接')
+    expect(component.text()).toContain('ThinkPad · Agent 1.0.0')
+    expect(component.text()).toContain('进入 Remote')
+    expect(component.text()).toContain('重新下载安装包')
+    expect(component.text()).not.toContain('下载签名 Agent')
+    component.unmount()
+  })
+
+  it('groups mobile Remote conversations by project without duplicate task navigation', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      if (url.endsWith('/workspaces')) return envelope({ items: [workspace] })
+      if (url.endsWith('/threads'))
+        return envelope({ items: [thread], next_cursor: null })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+    applyCodexSession([AuthScope.CodexRead])
+
+    const component = await mountSuspended(CodexMobileRemoteNavigator)
+    await flushPromises()
+
+    expect(component.text()).toContain('Remote')
+    expect(component.text()).toContain('ThinkPad')
+    expect(component.text()).toContain('FastAPI Backend')
+    expect(component.text()).toContain('完成 Phase 3')
+    expect(component.text()).not.toContain('最近任务')
+    expect(component.text()).not.toContain('未命名任务')
+    component.unmount()
+  })
+
+  it('builds an explicit Remote return link for mobile secondary pages', async () => {
+    const sessionStore = useCodexSessionStore()
+    sessionStore.projection.hostsById[host.host_id] = host as never
+    sessionStore.projection.workspacesById[workspace.workspace_id] =
+      workspace as never
+    sessionStore.projection.threadsById[thread.upstream_thread_id] =
+      thread as never
+    sessionStore.selectedHostId = host.host_id
+    sessionStore.selectedWorkspaceId = workspace.workspace_id
+    sessionStore.selectedThreadId = thread.upstream_thread_id
+
+    const component = await mountSuspended(CodexMobilePageHeader, {
+      props: { title: '审批中心' },
+    })
+
+    expect(component.text()).toContain('Remote')
+    expect(component.text()).toContain('审批中心')
+    expect(component.get('[aria-label="返回 Remote"]').attributes('href')).toBe(
+      '/codex/tasks/thread-1?hostId=host-1&workspaceId=workspace-1',
+    )
     component.unmount()
   })
 
@@ -221,6 +452,129 @@ describe('Codex pages and mobile controls', () => {
       `${AUTH_BEARER_TOKEN_TYPE} access-token`,
     )
     component.unmount()
+  })
+
+  it('refreshes a conflicted host version without losing input or retrying automatically', async () => {
+    const refreshedHost = { ...host, version: 2 }
+    const renamedHost = {
+      ...refreshedHost,
+      display_name: '开发电脑',
+      version: 3,
+    }
+    const submittedVersions: string[] = []
+    let hostListRequestCount = 0
+    let renameRequestCount = 0
+    const fetchMock = vi.fn(
+      (url: string, options?: { method?: string; headers?: HeadersInit }) => {
+        if (url === '/codex/hosts' && options?.method === 'GET') {
+          hostListRequestCount += 1
+          return envelope({
+            items: [hostListRequestCount === 1 ? host : refreshedHost],
+          })
+        }
+        if (url === '/codex/hosts/host-1' && options?.method === 'PATCH') {
+          renameRequestCount += 1
+          submittedVersions.push(
+            new Headers(options.headers).get('If-Match') ?? '',
+          )
+          if (renameRequestCount === 1) {
+            throw {
+              statusCode: 412,
+              data: {
+                header: {
+                  code: CodexDeviceErrorCode.VersionConflict,
+                  message: 'Codex主机版本已经变化。',
+                  request_id: 'request-host-conflict',
+                },
+                data: {
+                  kind: 'http_fault',
+                  schema_version: '1.0',
+                  status_code: 412,
+                  error_code: CodexDeviceErrorCode.VersionConflict,
+                },
+              },
+            }
+          }
+          return envelope(renamedHost)
+        }
+        throw new Error(`Unexpected URL: ${url}`)
+      },
+    )
+    vi.stubGlobal('$fetch', fetchMock)
+    applyCodexSession([AuthScope.CodexHostManage])
+
+    const component = await mountSuspended(CodexSettingsPage, {
+      global: {
+        stubs: {
+          teleport: true,
+        },
+      },
+    })
+    await flushPromises()
+    await component.get('[aria-label="重命名电脑"]').trigger('click')
+    const input = component.get('input')
+    await input.setValue('开发电脑')
+    await component.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(renameRequestCount).toBe(1)
+    expect(hostListRequestCount).toBe(2)
+    expect(component.text()).toContain('Codex主机版本已经变化。')
+    expect(component.get('input').element.value).toBe('开发电脑')
+    expect(useCodexDevicesStore().hosts[0]?.version).toBe(2)
+
+    await component.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(renameRequestCount).toBe(2)
+    expect(submittedVersions).toEqual(['1', '2'])
+    expect(useCodexDevicesStore().hosts[0]?.display_name).toBe('开发电脑')
+    expect(component.find('[role="dialog"]').exists()).toBe(false)
+    component.unmount()
+  })
+
+  it('removes a revoked host and every related session projection immediately', async () => {
+    const grantToken = 'g'.repeat(64)
+    const fetchMock = vi.fn((url: string) => {
+      if (url === AUTH_STEP_UP_PATH) {
+        return envelope({
+          grant_token: grantToken,
+          expires_at: '2026-08-14T12:00:00Z',
+        })
+      }
+      if (url === '/codex/hosts/host-1/revoke') {
+        return envelope({
+          ...host,
+          status: 'revoked',
+          revoked_at: '2026-08-14T11:00:00Z',
+          version: 2,
+        })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+    applyCodexSession([AuthScope.CodexHostManage])
+    const devicesStore = useCodexDevicesStore()
+    devicesStore.hosts = [host as never]
+    const sessionStore = useCodexSessionStore()
+    sessionStore.projection.hostsById[host.host_id] = host as never
+    sessionStore.projection.workspacesById[workspace.workspace_id] =
+      workspace as never
+    sessionStore.projection.threadsById[thread.upstream_thread_id] =
+      thread as never
+    sessionStore.selectedHostId = host.host_id
+    sessionStore.selectedWorkspaceId = workspace.workspace_id
+    sessionStore.selectedThreadId = thread.upstream_thread_id
+
+    await devicesStore.revokeHost(host as never, 'password')
+
+    expect(devicesStore.hosts).toEqual([])
+    expect(sessionStore.projection.hostsById).toEqual({})
+    expect(sessionStore.projection.workspacesById).toEqual({})
+    expect(sessionStore.projection.threadsById).toEqual({})
+    expect(sessionStore.selectedHostId).toBeNull()
+    expect(sessionStore.selectedWorkspaceId).toBeNull()
+    expect(sessionStore.selectedThreadId).toBeNull()
   })
 
   it('keeps mobile drafts visible while an offline host disables sending', async () => {

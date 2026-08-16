@@ -2,7 +2,7 @@
   <PageContainer
     eyebrow="身份管理"
     title="管理员用户"
-    description="用户列表、角色绑定、启停与密码重置按后端身份接口闭环。"
+    description="用户列表、角色与直接 scope、启停及密码重置按后端身份接口闭环。"
   >
     <AppAlert
       v-if="message"
@@ -40,6 +40,8 @@
             <th>主体</th>
             <th>状态</th>
             <th>角色</th>
+            <th>直接 scopes</th>
+            <th>最终 scopes</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -55,6 +57,8 @@
               </BaseBadge>
             </td>
             <td>{{ user.role_keys.join(', ') || '无' }}</td>
+            <td>{{ user.direct_scope_codes.join(', ') || '无' }}</td>
+            <td>{{ user.effective_scope_codes.join(', ') || '无' }}</td>
             <td>
               <div class="flex flex-wrap gap-2">
                 <BaseButton
@@ -84,7 +88,7 @@
             </td>
           </tr>
           <tr v-if="!users.length">
-            <td colspan="5">暂无用户记录</td>
+            <td colspan="7">暂无用户记录</td>
           </tr>
         </tbody>
       </AdminTable>
@@ -131,6 +135,21 @@
           >替换角色</BaseButton
         >
       </AdminToolbar>
+      <AdminToolbar>
+        <BaseInput
+          v-model="editScopeCodes"
+          label="直接 scopes"
+          hint="逗号分隔；最终 scopes 同时包含角色授权"
+        />
+        <BaseInput
+          v-model="scopeReplaceConfirmation"
+          label="高危确认短语"
+          :hint="`直接 scope 替换属高危授权变更,须输入 ${ADMIN_IDENTITY_GRANT_CONFIRMATION_PHRASE}`"
+        />
+        <BaseButton :loading="saving" @click="replaceScopes"
+          >替换直接 scopes</BaseButton
+        >
+      </AdminToolbar>
     </AdminCard>
   </PageContainer>
 </template>
@@ -174,7 +193,9 @@ const createPassword = ref('')
 const createRoleKeys = ref('')
 const editUsername = ref('')
 const editRoleKeys = ref('')
+const editScopeCodes = ref('')
 const roleReplaceConfirmation = ref('')
+const scopeReplaceConfirmation = ref('')
 const resetPasswordValue = ref('')
 const statusReason = ref(DEFAULT_STATUS_REASON)
 const total = ref(0)
@@ -203,6 +224,10 @@ const roleKeysFromText = (value: string) => {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+const scopeCodesFromText = (value: string) => {
+  return [...new Set(roleKeysFromText(value))]
 }
 
 const showSuccess = (nextMessage: string) => {
@@ -271,7 +296,9 @@ const selectUser = (user: AdminUserPayload) => {
   selectedUser.value = user
   editUsername.value = user.username
   editRoleKeys.value = user.role_keys.join(', ')
+  editScopeCodes.value = user.direct_scope_codes.join(', ')
   roleReplaceConfirmation.value = ''
+  scopeReplaceConfirmation.value = ''
   resetPasswordValue.value = ''
 }
 
@@ -309,6 +336,33 @@ const replaceRoles = async () => {
     })
     roleReplaceConfirmation.value = ''
     showSuccess('用户角色已替换。')
+    await loadUsers()
+  } catch (error) {
+    showError(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+const replaceScopes = async () => {
+  if (!selectedUser.value) {
+    return
+  }
+
+  saving.value = true
+
+  try {
+    const updated = await client.users.replaceScopes(
+      selectedUser.value.subject_id,
+      {
+        scope_codes: scopeCodesFromText(editScopeCodes.value),
+        confirmation: scopeReplaceConfirmation.value,
+      },
+    )
+    selectedUser.value = updated
+    editScopeCodes.value = updated.direct_scope_codes.join(', ')
+    scopeReplaceConfirmation.value = ''
+    showSuccess('用户直接 scopes 已替换。')
     await loadUsers()
   } catch (error) {
     showError(error)

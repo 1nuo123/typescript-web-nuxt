@@ -8,7 +8,7 @@
       variant="danger"
       size="sm"
       :disabled="interrupting"
-      title="中断当前任务"
+      title="中断当前会话"
       @click="$emit('interrupt')"
     >
       <Square class="size-3" fill="currentColor" aria-hidden="true" />
