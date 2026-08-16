@@ -94,6 +94,14 @@ endpoint 未启用时必须保持功能开关关闭。
 
 Production should place Nuxt and FastAPI behind one HTTPS gateway origin. The backend browser login/refresh endpoints keep the refresh token in a Secure, httpOnly, SameSite cookie; Nuxt stores only the short-lived access token in memory and never reads the refresh token. Use a single public REST namespace such as `NUXT_PUBLIC_API_BASE_URL=/api` so browser cookie paths match the request path; production WSS should be derived from or proxied at the same HTTPS gateway.
 
+For the temporary `http://47.113.177.140` server acceptance environment, clone
+this repository beside `python-web-fastapi` and run the backend repository's
+`deploy/prepare-production-env.sh` and `deploy/run-production-ip.sh` scripts.
+The scripts generate this repository's untracked `.env.production.local`,
+attach Nuxt to `fastapi-web-production-edge`, and keep browser API requests on
+the same-origin `/api` namespace. Persistent login refresh and Windows Agent
+WSS still require the later HTTPS domain acceptance.
+
 ## Delivery
 
 This skeleton targets SSR Node delivery through Nuxt/Nitro `node-server`. Static generation is not part of the default backend-admin delivery path.
