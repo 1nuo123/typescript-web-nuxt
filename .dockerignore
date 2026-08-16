@@ -1,29 +1,59 @@
-.git
+.git/
+.github/
 .gitignore
-.idea
-.cursor
-.codex-tmp
-.playwright-mcp
+.dockerignore
 
-node_modules
-.nuxt
-.output
-.nitro
-.cache
-.data
-dist
-coverage
-playwright-report
-test-results
+# Local editors and tools
+.agents/
+.idea/
+.vscode/
+.fleet/
+.cursor/
+.codex-tmp/
+.playwright-mcp/
+/--host/
 
-*.log
-logs
+# Dependencies and generated output
+node_modules/
+.pnpm-store/
+.nuxt/
+.output/
+.nitro/
+.cache/
+.data/
+dist/
+*.tsbuildinfo
 
+# Tests, coverage, and documentation
+tests/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+docs/
+*.md
+vitest.config.*
+playwright.config.*
+
+# Docker orchestration files are not needed inside the image
+compose*.yml
+compose*.yaml
+
+# Logs and temporary files
+*.log*
+logs/
+.temp/
+tmp/
+*.tmp
+
+# Local environment files (examples remain available)
 .env
 .env.*
 !.env.example
 !.env.*.example
 
+# OS metadata
 .DS_Store
 Thumbs.db
 Desktop.ini

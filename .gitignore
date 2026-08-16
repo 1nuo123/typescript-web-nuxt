@@ -1,22 +1,43 @@
-# Nuxt dev/build outputs
-.output
-.data
-.nuxt
-.nitro
-.cache
-dist
+# Nuxt/Vite generated output
+.nuxt/
+.output/
+.nitro/
+.data/
+.cache/
+dist/
+*.tsbuildinfo
 
 # Node dependencies
-node_modules
+node_modules/
+.pnpm-store/
 
 # Logs
-logs
-*.log
+logs/
+*.log*
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Misc
+# Tests and coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+
+# OS and editor files
 .DS_Store
-.fleet
-.idea
+Thumbs.db
+Desktop.ini
+.fleet/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.swp
+*.swo
 
 # Local env files
 .env
@@ -24,11 +45,13 @@ logs
 !.env.example
 !.env.*.example
 
-# Playwright
-playwright-report/
-test-results/
-.playwright-mcp/
-
-# Local generated artifacts
-coverage/
+# Local tools and temporary files
+.agents/
+.cursor/
 .codex-tmp/
+.playwright-mcp/
+/--host/
+.temp/
+tmp/
+*.tmp
+.eslintcache
