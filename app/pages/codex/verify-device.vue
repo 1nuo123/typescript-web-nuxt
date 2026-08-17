@@ -82,7 +82,7 @@
         variant="secondary"
         @click="downloadAgent"
       >
-        下载签名 Agent {{ agentRelease.version }}
+        下载 Agent {{ agentRelease.version }}
       </BaseButton>
     </form>
 
@@ -107,7 +107,7 @@
         variant="ghost"
         @click="downloadAgent"
       >
-        下载签名 Agent {{ agentRelease.version }}
+        下载 Agent {{ agentRelease.version }}
       </BaseButton>
     </div>
 

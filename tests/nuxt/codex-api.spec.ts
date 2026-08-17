@@ -5,6 +5,7 @@ import { createCodexHostsClient } from '~/services/api/codex-hosts'
 import { createCodexThreadsClient } from '~/services/api/codex-threads'
 import { CodexAgentReleaseClient } from '~/services/api/codex-agent-release'
 import { CodexEnrollmentClient } from '~/services/api/codex-enrollment'
+import { createCodexIdempotencyKey } from '~/services/api/codex-api-client'
 
 const envelope = <T>(data: T) => ({
   header: {
@@ -25,6 +26,19 @@ describe('Codex API services', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     useAuthStore().$reset()
+  })
+
+  it('creates an RFC 4122 UUID when randomUUID is unavailable', () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: vi.fn((bytes: Uint8Array) => {
+        bytes.set(Array.from({ length: 16 }, (_, index) => index))
+        return bytes
+      }),
+    })
+
+    expect(createCodexIdempotencyKey()).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
   })
 
   it('loads host collections through the authenticated response envelope', async () => {
