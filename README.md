@@ -96,11 +96,13 @@ Production should place Nuxt and FastAPI behind one HTTPS gateway origin. The ba
 
 For the temporary `http://47.113.177.140` server acceptance environment, clone
 this repository beside `python-web-fastapi` and run the backend repository's
-`deploy/prepare-production-env.sh` and `deploy/run-production-ip.sh` scripts.
-The scripts generate this repository's untracked `.env.production.local`,
-attach Nuxt to `fastapi-web-production-edge`, and keep browser API requests on
-the same-origin `/api` namespace. Persistent login refresh and Windows Agent
-WSS still require the later HTTPS domain acceptance.
+`bash deploy/production.sh bootstrap` command. It generates this repository's
+untracked `.env.production.local` and attaches Nuxt to
+`fastapi-web-production-edge`. Routine releases use
+`bash deploy/production.sh update`, which creates a pre-update PostgreSQL
+backup before fast-forwarding both repositories. Browser API requests remain
+on the same-origin `/api` namespace. Persistent login refresh and Windows
+Agent WSS still require the later HTTPS domain acceptance.
 
 ## Delivery
 

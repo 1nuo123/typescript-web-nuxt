@@ -1,7 +1,14 @@
+x-production-logging: &production-logging
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '5'
+
 services:
   frontend:
     image: typescript-web-nuxt:production-local
     ports: !reset []
+    logging: *production-logging
     deploy:
       resources:
         limits:
