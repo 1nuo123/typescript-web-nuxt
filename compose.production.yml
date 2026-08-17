@@ -7,6 +7,9 @@ x-production-logging: &production-logging
 services:
   frontend:
     image: typescript-web-nuxt:production-local
+    build:
+      args:
+        NPM_REGISTRY: https://registry.npmmirror.com
     ports: !reset []
     logging: *production-logging
     deploy:

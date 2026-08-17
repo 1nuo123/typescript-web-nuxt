@@ -2,7 +2,11 @@
 
 FROM node:24-alpine AS base
 
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    COREPACK_NPM_REGISTRY=${NPM_REGISTRY} \
+    npm_config_registry=${NPM_REGISTRY} \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 
