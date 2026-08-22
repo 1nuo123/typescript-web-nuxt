@@ -354,9 +354,13 @@ describe('Codex pages and mobile controls', () => {
           },
           detail: {
             version: '0.1.3',
+            distribution_mode: 'verified',
+            artifact_sha256:
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             download_url: 'https://downloads.acme.dev/CodexRemoteAgent.msi',
             manifest_url: 'https://downloads.acme.dev/metadata/timestamp.json',
             minimum_security_version: '0.1.3',
+            automatic_updates_enabled: true,
           },
         })
       throw new Error(`Unexpected URL: ${url}`)
@@ -372,6 +376,55 @@ describe('Codex pages and mobile controls', () => {
     expect(component.text()).toContain('进入 Remote')
     expect(component.text()).toContain('重新下载安装包')
     expect(component.text()).not.toContain('下载签名 Agent')
+    component.unmount()
+  })
+
+  it('requires acknowledgement before offering an internal Agent download', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/codex/hosts') return envelope({ items: [host] })
+      if (url === '/codex/agent-release/current')
+        return envelope({
+          header: {
+            kind: 'codex_agent_release_manifest',
+            schema_version: '1.0',
+            channel: 'stable',
+          },
+          detail: {
+            version: '0.1.16',
+            distribution_mode: 'internal',
+            artifact_sha256:
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            download_url:
+              'https://downloads.acme.dev/releases/download/v0.1.16/CodexRemoteAgent.msi',
+            manifest_url:
+              'https://downloads.acme.dev/releases/download/v0.1.16/internal-release.json',
+            minimum_security_version: '0.1.16',
+            automatic_updates_enabled: false,
+          },
+        })
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('$fetch', fetchMock)
+    applyCodexSession([AuthScope.CodexHostManage])
+
+    const component = await mountSuspended(VerifyDevicePage)
+    await flushPromises()
+
+    expect(component.text()).toContain('内部体验安装包')
+    expect(component.text()).toContain('未完成正式代码签名和自动更新发布')
+    expect(component.text()).toContain(
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    )
+    const downloadButton = component
+      .findAll('button')
+      .find((button) => button.text().includes('重新下载安装包'))
+    expect(downloadButton?.attributes('disabled')).toBeDefined()
+
+    await component
+      .get('input[aria-label="已了解内部体验包风险"]')
+      .setValue(true)
+
+    expect(downloadButton?.attributes('disabled')).toBeUndefined()
     component.unmount()
   })
 

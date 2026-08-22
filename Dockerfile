@@ -25,12 +25,17 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 
 FROM base AS builder
 
+ARG NODE_BUILD_MAX_OLD_SPACE_SIZE=""
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NODE_ENV=production
 
-RUN pnpm build
+RUN if [ -n "$NODE_BUILD_MAX_OLD_SPACE_SIZE" ]; then \
+      export NODE_OPTIONS="--max-old-space-size=$NODE_BUILD_MAX_OLD_SPACE_SIZE"; \
+    fi; \
+    pnpm build
 
 
 FROM node:24-alpine AS runtime

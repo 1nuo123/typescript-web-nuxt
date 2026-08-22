@@ -4,6 +4,33 @@
       <h1 class="m-0 text-xl font-semibold">验证电脑</h1>
     </header>
 
+    <AppAlert
+      v-if="isInternalRelease"
+      variant="warning"
+      title="内部体验安装包"
+      description="此包未完成正式代码签名和自动更新发布。请只从本页下载，并在安装前核对 SHA-256。"
+    >
+      <div class="grid w-full gap-2 text-sm">
+        <p class="m-0 text-ink-muted">
+          版本 {{ agentRelease?.version }} · SHA-256
+        </p>
+        <code
+          class="break-all rounded-md bg-canvas px-2 py-1.5 text-xs text-ink"
+        >
+          {{ agentRelease?.artifact_sha256 }}
+        </code>
+        <label class="flex items-start gap-2 text-sm text-ink">
+          <input
+            v-model="internalReleaseAcknowledged"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 accent-primary"
+            aria-label="已了解内部体验包风险"
+          />
+          <span>我已了解这是内部体验包，并会使用自己的账号完成设备授权。</span>
+        </label>
+      </div>
+    </AppAlert>
+
     <div
       v-if="!hostStatusLoaded"
       class="grid justify-items-center gap-3 rounded-lg border border-line bg-surface p-6 text-center"
@@ -35,6 +62,7 @@
         <BaseButton
           v-if="agentRelease"
           variant="secondary"
+          :disabled="!canDownloadAgent"
           @click="downloadAgent"
         >
           重新下载安装包
@@ -80,6 +108,7 @@
         v-if="agentRelease"
         type="button"
         variant="secondary"
+        :disabled="!canDownloadAgent"
         @click="downloadAgent"
       >
         下载 Agent {{ agentRelease.version }}
@@ -105,6 +134,7 @@
         v-if="agentRelease"
         size="sm"
         variant="ghost"
+        :disabled="!canDownloadAgent"
         @click="downloadAgent"
       >
         下载 Agent {{ agentRelease.version }}
@@ -207,6 +237,7 @@ const intentId = ref(
 )
 const showManualFallback = ref(!intentId.value)
 const agentRelease = ref<CodexAgentReleaseDownloadDetail | null>(null)
+const internalReleaseAcknowledged = ref(false)
 const browserOrigin = ref('')
 const hostStatusLoaded = ref(false)
 const ENROLLMENT_POLL_INTERVAL_MS = 1_000
@@ -229,6 +260,14 @@ const connectedHost = computed(
   () =>
     devicesStore.hosts.find((host) => host.status === CodexHostStatus.Online) ??
     null,
+)
+
+const isInternalRelease = computed(
+  () => agentRelease.value?.distribution_mode === 'internal',
+)
+
+const canDownloadAgent = computed(
+  () => !isInternalRelease.value || internalReleaseAcknowledged.value,
 )
 
 const resultLabel = computed(() => {
@@ -259,7 +298,7 @@ const decide = async (decision: DeviceAuthorizationDecision) => {
 }
 
 const downloadAgent = (): void => {
-  if (agentRelease.value)
+  if (agentRelease.value && canDownloadAgent.value)
     window.location.assign(agentRelease.value.download_url)
 }
 
