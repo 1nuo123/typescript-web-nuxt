@@ -6,11 +6,12 @@
     <label class="sr-only" :for="inputId">发送给 Codex</label>
     <textarea
       :id="inputId"
+      ref="textarea"
       v-model="draft"
       rows="3"
       :disabled="disabled || submitting"
       :placeholder="placeholder"
-      class="min-h-20 w-full resize-none border-0 bg-transparent px-4 pt-3.5 pb-2 text-[0.9375rem] leading-6 text-ink outline-none placeholder:text-ink-muted focus:ring-0"
+      class="block w-full resize-none border-0 bg-transparent px-4 pt-3.5 pb-2 text-[0.9375rem] leading-6 text-ink outline-none placeholder:text-ink-muted focus:ring-0"
       @keydown.meta.enter.prevent="submit"
       @keydown.ctrl.enter.prevent="submit"
     />
@@ -46,27 +47,48 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     disabled?: boolean
+    disabledReason?: string
     submitting?: boolean
     activeTurn?: boolean
   }>(),
-  { disabled: false, submitting: false, activeTurn: false },
+  {
+    disabled: false,
+    disabledReason: undefined,
+    submitting: false,
+    activeTurn: false,
+  },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   submit: [message: string]
+  'before-height-change': []
+  'height-change': []
 }>()
 const inputId = useId()
+const textarea = ref<HTMLTextAreaElement | null>(null)
 const draft = computed({
   get: () => props.modelValue,
   set: (value: string) => emit('update:modelValue', value),
 })
 const placeholder = computed(() =>
   props.disabled
-    ? '主机离线，草稿会保留在当前页面。'
+    ? (props.disabledReason ?? '主机离线，草稿会保留在当前页面。')
     : props.activeTurn
       ? '向正在运行的会话追加指令…'
       : '描述要在本机完成的工作…',
 )
+
+const { resizeTextarea } = useCodexComposerViewport({
+  textarea,
+  content: draft,
+  onBeforeHeightChange: () => emit('before-height-change'),
+  onHeightChange: () => emit('height-change'),
+})
+
+const blurInput = (): void => textarea.value?.blur()
+
+defineExpose({ blurInput, resizeTextarea })
+
 const submit = (): void => {
   const message = draft.value.trim()
   if (!message || props.disabled || props.submitting) return

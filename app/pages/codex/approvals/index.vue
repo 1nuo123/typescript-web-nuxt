@@ -8,17 +8,25 @@
         <div>
           <h1 class="m-0 text-lg font-semibold">审批</h1>
           <p class="mt-1 mb-0 text-xs text-ink-muted">
-            {{ approvalStore.pending.length }} 项待处理
+            {{ visiblePendingApprovals.length }} 项待处理
           </p>
         </div>
+        <NuxtLink
+          v-if="returnRoute"
+          :to="returnRoute"
+          class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-line px-3 text-xs font-medium hover:bg-surface-muted focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <ArrowLeft class="size-3.5" aria-hidden="true" />
+          返回会话
+        </NuxtLink>
       </header>
 
       <AppSkeleton v-if="approvalStore.loading" class="h-40" />
       <EmptyState
-        v-else-if="approvalStore.pending.length === 0"
+        v-else-if="visiblePendingApprovals.length === 0"
         eyebrow="当前安全"
         title="没有待处理审批"
-        description="新的命令或文件变更请求会实时出现在这里。"
+        description="新的命令、文件变更或权限请求会实时出现在这里。"
       />
       <div v-else class="grid gap-5">
         <section
@@ -48,12 +56,12 @@
       </div>
 
       <section
-        v-if="approvalStore.recentlyResolved.length"
+        v-if="visibleRecentlyResolved.length"
         class="grid gap-2 border-t border-line pt-4"
       >
         <h2 class="m-0 text-sm font-semibold">最近处理</h2>
         <div
-          v-for="approval in approvalStore.recentlyResolved"
+          v-for="approval in visibleRecentlyResolved"
           :key="`resolved-${approval.approval_id}`"
           class="flex items-center justify-between gap-3 border-b border-line py-2 text-xs"
         >
@@ -75,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { CheckCheck } from '@lucide/vue'
+import { ArrowLeft, CheckCheck } from '@lucide/vue'
 import {
   CodexApprovalDecision,
   CodexApprovalDecisionState,
@@ -86,7 +94,7 @@ import {
 } from '~/types/codex-approval'
 import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
-import { LOGIN_ROUTE } from '~/types/routes'
+import { CODEX_TASKS_ROUTE, LOGIN_ROUTE } from '~/types/routes'
 
 interface ApprovalGroup {
   key: string
@@ -102,6 +110,13 @@ interface ApprovalPresentation {
 
 const approvalDecisionPresentation = {
   [CodexApprovalDecision.Accept]: { label: '已允许' },
+  [CodexApprovalDecision.AcceptForSession]: { label: '本会话已允许' },
+  [CodexApprovalDecision.AcceptWithExecpolicyAmendment]: {
+    label: '已应用命令策略',
+  },
+  [CodexApprovalDecision.ApplyNetworkPolicyAmendment]: {
+    label: '已应用网络策略',
+  },
   [CodexApprovalDecision.Decline]: { label: '已拒绝' },
   [CodexApprovalDecision.Cancel]: { label: '已取消' },
 } satisfies Record<CodexApprovalDecision, ApprovalPresentation>
@@ -127,6 +142,32 @@ definePageMeta({
 
 const approvalStore = useCodexApprovalsStore()
 const authStore = useAuthStore()
+const route = useRoute()
+const selectedThreadId = computed(() =>
+  typeof route.query.threadId === 'string' ? route.query.threadId : null,
+)
+const returnRoute = computed(() => {
+  const candidate = route.query.returnTo
+  return typeof candidate === 'string' &&
+    candidate.startsWith(`${CODEX_TASKS_ROUTE}/`)
+    ? candidate
+    : null
+})
+const visiblePendingApprovals = computed(() =>
+  selectedThreadId.value
+    ? approvalStore.pending.filter(
+        (approval) => approval.thread_id === selectedThreadId.value,
+      )
+    : approvalStore.pending,
+)
+const visibleRecentlyResolved = computed(() =>
+  selectedThreadId.value
+    ? approvalStore.recentlyResolved.filter(
+        (approval) => approval.thread_id === selectedThreadId.value,
+      )
+    : approvalStore.recentlyResolved,
+)
+const returnedToConversation = ref(false)
 
 const isSubmitting = (approval: CodexApproval): boolean =>
   approvalStore.decisionStateById[approval.approval_id] ===
@@ -141,7 +182,7 @@ const resolvedDecisionLabel = (approval: CodexApproval): string =>
 
 const approvalGroups = computed<ApprovalGroup[]>(() => {
   const groups = new Map<string, CodexApproval[]>()
-  for (const approval of approvalStore.pending) {
+  for (const approval of visiblePendingApprovals.value) {
     const key = approval.turn_id || approval.approval_id
     groups.set(key, [...(groups.get(key) ?? []), approval])
   }
@@ -156,7 +197,10 @@ const approvalGroups = computed<ApprovalGroup[]>(() => {
         (approval) =>
           approval.approval_kind === CodexApprovalKind.Command &&
           approval.risk_level === CodexApprovalRiskLevel.Normal &&
-          approval.display_summary.read_only,
+          approval.display_summary.read_only &&
+          approval.display_summary.allowed_actions.includes(
+            CodexApprovalDecision.Accept,
+          ),
       ),
     submitting: items.some(isSubmitting),
   }))
@@ -177,6 +221,22 @@ const approveReadOnlyGroup = async (items: CodexApproval[]): Promise<void> => {
     }
   }
 }
+
+watch(
+  () => approvalStore.lastResolvedApproval,
+  (approval) => {
+    if (
+      returnedToConversation.value ||
+      !approval ||
+      !returnRoute.value ||
+      (selectedThreadId.value && approval.thread_id !== selectedThreadId.value)
+    ) {
+      return
+    }
+    returnedToConversation.value = true
+    void navigateTo(returnRoute.value)
+  },
+)
 
 onMounted(() => approvalStore.load())
 </script>

@@ -1,26 +1,6 @@
 <template>
-  <section class="grid min-w-0 gap-3" aria-label="文件变更">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <label class="sr-only" :for="fileSelectId">选择变更文件</label>
-      <span class="relative flex min-w-0 max-w-full">
-        <select
-          :id="fileSelectId"
-          v-model="selectedFileIndex"
-          class="min-h-9 min-w-0 max-w-full cursor-pointer appearance-none rounded-md border border-line-strong bg-surface py-1 pr-9 pl-3 text-xs text-ink shadow-[0_1px_2px_rgb(18_24_33/0.04)] outline-none transition-[border-color,box-shadow] hover:border-ink-muted/55 focus:border-primary focus:ring-[3px] focus:ring-primary/15"
-        >
-          <option
-            v-for="(file, index) in item.detail.diff.files"
-            :key="file.path"
-            :value="index"
-          >
-            {{ file.path }}
-          </option>
-        </select>
-        <ChevronDown
-          class="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-ink-muted"
-          aria-hidden="true"
-        />
-      </span>
+  <section class="grid min-w-0 gap-3" aria-label="文件变更详情">
+    <div class="flex flex-wrap items-center justify-end gap-2">
       <div
         class="inline-flex rounded-md border border-line p-0.5"
         role="tablist"
@@ -46,13 +26,12 @@
     </div>
 
     <div
-      v-if="selectedFile"
       class="min-w-0 overflow-x-auto rounded-lg border border-line bg-surface"
     >
-      <p v-if="selectedFile.binary" class="m-0 p-4 text-sm text-ink-muted">
+      <p v-if="file.binary" class="m-0 p-4 text-sm text-ink-muted">
         二进制文件，无法在线预览。
       </p>
-      <p v-else-if="selectedFile.large" class="m-0 p-4 text-sm text-ink-muted">
+      <p v-else-if="file.large" class="m-0 p-4 text-sm text-ink-muted">
         文件变更过大，已限制在线预览。
       </p>
       <div v-else class="min-w-[38rem] font-mono text-xs">
@@ -111,12 +90,6 @@
         </div>
       </div>
     </div>
-    <p
-      v-else
-      class="m-0 rounded-md border border-line bg-surface-muted p-3 text-sm text-ink-muted"
-    >
-      当前变更没有可展示的文件内容。
-    </p>
     <BaseButton
       v-if="hiddenLineCount > 0"
       size="sm"
@@ -126,55 +99,44 @@
     >
       再加载 {{ Math.min(hiddenLineCount, DIFF_LINE_CHUNK_SIZE) }} 行
     </BaseButton>
-    <p
-      v-if="item.detail.diff.truncated || selectedFile?.truncated"
-      class="m-0 text-xs text-ink-muted"
-    >
+    <p v-if="truncated || file.truncated" class="m-0 text-xs text-ink-muted">
       变更已截断，请在本机 Codex 中查看完整内容。
     </p>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ChevronDown } from '@lucide/vue'
-import {
-  CodexDiffLineKind,
-  type CodexDiffTimelineItem,
-} from '~/types/codex-item'
+import { CodexDiffLineKind, type CodexDiffFile } from '~/types/codex-item'
 
 enum DiffViewMode {
   Unified = 'unified',
   Split = 'split',
 }
 
-const props = defineProps<{ item: CodexDiffTimelineItem }>()
+/** 仅渲染已由上下文页面选择的单个文件，避免文件切换与内容预览共同挤压主时间线。 */
+const props = withDefaults(
+  defineProps<{
+    file: CodexDiffFile
+    truncated?: boolean
+  }>(),
+  { truncated: false },
+)
 const viewMode = ref<DiffViewMode>(DiffViewMode.Unified)
-const selectedFileIndex = ref(0)
 const DIFF_LINE_CHUNK_SIZE = 800
 const visibleLineLimit = ref(DIFF_LINE_CHUNK_SIZE)
-const fileSelectId = useId()
 const modes = [
   { value: DiffViewMode.Unified, label: '统一' },
   { value: DiffViewMode.Split, label: '分栏' },
 ]
-const selectedFile = computed(
-  () => props.item.detail.diff.files[selectedFileIndex.value] ?? null,
-)
-const totalLineCount = computed(
-  () =>
-    selectedFile.value?.hunks.reduce(
-      (total, hunk) => total + hunk.lines.length,
-      0,
-    ) ?? 0,
+const totalLineCount = computed(() =>
+  props.file.hunks.reduce((total, hunk) => total + hunk.lines.length, 0),
 )
 const hiddenLineCount = computed(() =>
   Math.max(totalLineCount.value - visibleLineLimit.value, 0),
 )
 const visibleHunks = computed(() => {
-  const file = selectedFile.value
-  if (!file) return []
   let remaining = visibleLineLimit.value
-  return file.hunks.flatMap((hunk) => {
+  return props.file.hunks.flatMap((hunk) => {
     if (remaining <= 0) return []
     const lines = hunk.lines.slice(0, remaining)
     remaining -= lines.length
@@ -193,7 +155,10 @@ const prefix = (kind: CodexDiffLineKind): string =>
       ? '- '
       : '  '
 
-watch(selectedFileIndex, () => {
-  visibleLineLimit.value = DIFF_LINE_CHUNK_SIZE
-})
+watch(
+  () => props.file.path,
+  () => {
+    visibleLineLimit.value = DIFF_LINE_CHUNK_SIZE
+  },
+)
 </script>

@@ -18,6 +18,7 @@ import { CodexDeviceErrorCode } from '~/types/codex-device'
 import { WorkspaceSelectionState } from '~/types/codex-workspace'
 import {
   buildCodexProjectRoute,
+  buildCodexApprovalsRoute,
   buildCodexTaskRoute,
   buildCodexTasksRoute,
 } from '~/types/routes'
@@ -96,6 +97,13 @@ const workspace = {
   display_name: 'FastAPI Backend',
   repo_fingerprint: null,
   default_branch: 'main',
+  execution_preferences: {
+    model: null,
+    reasoning_effort: null,
+    sandbox_mode: 'workspace-write',
+    approval_policy: 'untrusted',
+    capabilities_revision: 'a'.repeat(64),
+  },
   enabled: true,
   is_pinned: false,
   worktree_policy: {
@@ -298,6 +306,40 @@ describe('Codex pages and mobile controls', () => {
     expect(buildCodexProjectRoute('workspace-1', { hostId: 'host-1' })).toBe(
       '/codex/projects/workspace-1?hostId=host-1',
     )
+    expect(
+      buildCodexTaskRoute('thread-1', {
+        hostId: 'host-1',
+        workspaceId: 'workspace-1',
+        searchTerm: '会话 标题',
+        archived: true,
+      }),
+    ).toBe(
+      '/codex/tasks/thread-1?hostId=host-1&workspaceId=workspace-1&search=%E4%BC%9A%E8%AF%9D+%E6%A0%87%E9%A2%98&archived=true',
+    )
+    expect(
+      buildCodexTasksRoute({
+        hostId: 'host-1',
+        workspaceId: 'workspace-1',
+        searchTerm: '会话 标题',
+        archived: true,
+      }),
+    ).toBe(
+      '/codex/tasks?hostId=host-1&workspaceId=workspace-1&search=%E4%BC%9A%E8%AF%9D+%E6%A0%87%E9%A2%98&archived=true',
+    )
+    expect(
+      buildCodexApprovalsRoute({
+        threadId: 'thread-1',
+        returnTo:
+          '/codex/tasks/thread-1?hostId=host-1&timelineAnchorItem=item-3&timelineAnchorOffset=-18',
+      }),
+    ).toBe(
+      '/codex/approval-center?threadId=thread-1&returnTo=%2Fcodex%2Ftasks%2Fthread-1%3FhostId%3Dhost-1%26timelineAnchorItem%3Ditem-3%26timelineAnchorOffset%3D-18',
+    )
+    expect(
+      buildCodexApprovalsRoute({
+        returnTo: 'https://untrusted.example/redirect',
+      }),
+    ).toBe('/codex/approval-center')
   })
 
   it('shows an online Agent as connected and keeps reinstall as a secondary action', async () => {
@@ -593,6 +635,23 @@ describe('Codex pages and mobile controls', () => {
     component.unmount()
   })
 
+  it('uses the supplied realtime block reason while preserving a disabled draft', async () => {
+    const component = await mountSuspended(CodexComposer, {
+      props: {
+        modelValue: '等待同步的草稿',
+        disabled: true,
+        disabledReason: '实时状态同步中，暂时不能发送消息。',
+      },
+    })
+
+    expect(component.get('textarea').element.value).toBe('等待同步的草稿')
+    expect(component.get('textarea').attributes('placeholder')).toContain(
+      '实时状态同步中',
+    )
+    expect(component.get('button').attributes('disabled')).toBeDefined()
+    component.unmount()
+  })
+
   it('switches the composer action to steer while a turn is active', async () => {
     const component = await mountSuspended(CodexComposer, {
       props: {
@@ -605,5 +664,73 @@ describe('Codex pages and mobile controls', () => {
     await component.get('form').trigger('submit')
     expect(component.emitted('submit')).toEqual([['追加约束']])
     component.unmount()
+  })
+
+  it('caps the mobile composer at 35 percent of the visual viewport', async () => {
+    const visualViewport = new EventTarget()
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 600 },
+    })
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 390,
+    })
+    const component = await mountSuspended(CodexComposer, {
+      props: { modelValue: '' },
+    })
+    const textarea = component.get('textarea')
+    Object.defineProperty(textarea.element, 'scrollHeight', {
+      configurable: true,
+      get: () => 320,
+    })
+
+    await component.setProps({ modelValue: '长草稿'.repeat(100) })
+    await nextTick()
+
+    expect(textarea.attributes('style')).toContain('max-height: 210px')
+    expect(textarea.attributes('style')).toContain('height: 210px')
+    expect(textarea.attributes('style')).toContain('overflow-y: auto')
+    component.unmount()
+  })
+
+  it('uses the desktop composer cap and releases visual viewport listeners', async () => {
+    const visualViewport = new EventTarget()
+    Object.defineProperties(visualViewport, {
+      height: { configurable: true, value: 500 },
+    })
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1280,
+    })
+    const component = await mountSuspended(CodexComposer, {
+      props: { modelValue: '' },
+    })
+    const textarea = component.get('textarea')
+    Object.defineProperty(textarea.element, 'scrollHeight', {
+      configurable: true,
+      get: () => 360,
+    })
+
+    await component.setProps({ modelValue: '桌面长草稿'.repeat(100) })
+    await nextTick()
+    expect(textarea.attributes('style')).toContain('max-height: 240px')
+    expect(textarea.attributes('style')).toContain('height: 240px')
+
+    component.unmount()
+    Object.defineProperty(visualViewport, 'height', {
+      configurable: true,
+      value: 300,
+    })
+    visualViewport.dispatchEvent(new Event('resize'))
+    await nextTick()
+    expect(textarea.attributes('style')).toContain('height: 240px')
   })
 })

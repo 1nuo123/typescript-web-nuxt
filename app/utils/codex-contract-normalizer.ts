@@ -4,6 +4,7 @@ import {
   CodexApprovalRiskLevel,
   CodexApprovalState,
   type CodexApproval,
+  type CodexApprovalBase,
   type CodexApprovalCommandAction,
   type CodexApprovalFileChange,
 } from '../types/codex-approval'
@@ -37,6 +38,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const readString = (value: unknown): string | null =>
   typeof value === 'string' && value.length > 0 ? value : null
 
+/** 只接受后端收窄后的 UUID v4，非法上游标识不得参与乐观消息对账。 */
+const readClientOperationId = (value: unknown): string | null => {
+  const candidate = readString(value)
+  if (
+    !candidate ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      candidate,
+    )
+  ) {
+    return null
+  }
+  return candidate
+}
+
 const requireString = (value: unknown, path: string): string => {
   const candidate = readString(value)
   if (candidate === null) {
@@ -56,6 +71,13 @@ const readStringArray = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : []
+
+const normalizeApprovalDecisions = (value: unknown): CodexApprovalDecision[] =>
+  readStringArray(value).filter((item): item is CodexApprovalDecision =>
+    Object.values(CodexApprovalDecision).includes(
+      item as CodexApprovalDecision,
+    ),
+  )
 
 const readNullableNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -123,8 +145,17 @@ export const normalizeCodexApproval = (value: unknown): CodexApproval => {
     readString(value.expires_at) ??
     EPOCH_TIMESTAMP
   const createdAt = readString(value.created_at) ?? updatedAt
+  const approvalKind = enumValue(
+    value.approval_kind,
+    Object.values(CodexApprovalKind),
+    CodexApprovalKind.Command,
+  )
+  const allowedActions = normalizeApprovalDecisions(summary.allowed_actions)
 
-  return {
+  const approvalBase: Omit<
+    CodexApprovalBase,
+    'approval_kind' | 'display_summary'
+  > = {
     approval_id: requireString(value.approval_id, 'approval.approval_id'),
     owner_subject_id: readString(value.owner_subject_id) ?? '',
     host_id: requireString(value.host_id, 'approval.host_id'),
@@ -132,30 +163,8 @@ export const normalizeCodexApproval = (value: unknown): CodexApproval => {
     thread_id: requireString(value.thread_id, 'approval.thread_id'),
     turn_id: readString(value.turn_id),
     item_id: readString(value.item_id),
-    approval_kind: enumValue(
-      value.approval_kind,
-      Object.values(CodexApprovalKind),
-      CodexApprovalKind.Command,
-    ),
     risk_level: riskLevel,
     payload_digest: readString(value.payload_digest) ?? '',
-    display_summary: {
-      title: readString(summary.title) ?? undefined,
-      reason: readString(summary.reason) ?? undefined,
-      workspace_name: readString(summary.workspace_name),
-      risk_level: riskLevel,
-      command_summary: readString(summary.command_summary),
-      command: readString(summary.command),
-      command_actions: normalizeCommandActions(summary.command_actions),
-      working_directory: readString(summary.working_directory),
-      read_only: readBoolean(summary.read_only),
-      file_scope: readStringArray(summary.file_scope),
-      file_changes: normalizeFileChanges(summary.file_changes),
-      permission_names: readStringArray(summary.permission_names),
-      network_requested: readBoolean(summary.network_requested),
-      extra_root_requested: readBoolean(summary.extra_root_requested),
-      risk_reason: readString(summary.risk_reason),
-    },
     state: enumValue(
       value.state,
       Object.values(CodexApprovalState),
@@ -167,16 +176,57 @@ export const normalizeCodexApproval = (value: unknown): CodexApproval => {
         : 1,
     expires_at: readString(value.expires_at),
     decided_by: readString(value.decided_by),
-    decision:
-      value.decision === CodexApprovalDecision.Accept ||
-      value.decision === CodexApprovalDecision.Decline ||
-      value.decision === CodexApprovalDecision.Cancel
-        ? value.decision
-        : null,
+    decision: normalizeApprovalDecisions([value.decision])[0] ?? null,
     decided_at: readString(value.decided_at),
     applied_at: readString(value.applied_at),
     created_at: createdAt,
     updated_at: updatedAt,
+  }
+  const summaryBase = {
+    title: readString(summary.title) ?? undefined,
+    reason: readString(summary.reason) ?? undefined,
+    workspace_name: readString(summary.workspace_name),
+    risk_level: riskLevel,
+    risk_reason: readString(summary.risk_reason),
+    // 未由 Agent 明确通告的动作绝不能由客户端猜测或补全。
+    allowed_actions: allowedActions,
+  }
+
+  switch (approvalKind) {
+    case CodexApprovalKind.FileChange:
+      return {
+        ...approvalBase,
+        approval_kind: CodexApprovalKind.FileChange,
+        display_summary: {
+          ...summaryBase,
+          file_scope: readStringArray(summary.file_scope),
+          file_changes: normalizeFileChanges(summary.file_changes),
+        },
+      }
+    case CodexApprovalKind.Permissions:
+      return {
+        ...approvalBase,
+        approval_kind: CodexApprovalKind.Permissions,
+        display_summary: {
+          ...summaryBase,
+          permission_names: readStringArray(summary.permission_names),
+          network_requested: readBoolean(summary.network_requested),
+          extra_root_requested: readBoolean(summary.extra_root_requested),
+        },
+      }
+    case CodexApprovalKind.Command:
+      return {
+        ...approvalBase,
+        approval_kind: CodexApprovalKind.Command,
+        display_summary: {
+          ...summaryBase,
+          command_summary: readString(summary.command_summary),
+          command: readString(summary.command),
+          command_actions: normalizeCommandActions(summary.command_actions),
+          working_directory: readString(summary.working_directory),
+          read_only: readBoolean(summary.read_only),
+        },
+      }
   }
 }
 
@@ -303,6 +353,9 @@ export const normalizeCodexTimelineItem = (
       CodexTimelineItemStatus.Completed,
     ),
     created_at: readString(value.header.created_at),
+    client_operation_id: readClientOperationId(
+      value.header.client_operation_id,
+    ),
   }
   const detail = value.detail
   const kind = enumValue(

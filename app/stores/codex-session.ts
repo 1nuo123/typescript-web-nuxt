@@ -1,9 +1,6 @@
 import { defineStore } from 'pinia'
 import type { ApiErrorPayload } from '~/types/api'
-import { AuthScope } from '~/types/auth'
 import {
-  CODEX_APPROVAL_RESTRICTION_ORDER,
-  CODEX_SANDBOX_RESTRICTION_ORDER,
   CodexApprovalPolicy,
   CodexSandboxMode,
   type CodexHost,
@@ -14,12 +11,13 @@ import {
   CodexTimelineItemSource,
   CodexTimelineItemStatus,
   type CodexTextTimelineItem,
-  type CodexTimelineItem,
+  type CodexTimelineRenderableItem,
 } from '~/types/codex-item'
 import {
   CODEX_REALTIME_SCHEMA_VERSION,
   CODEX_REALTIME_STREAM_EPOCH,
   CodexRealtimeEventType,
+  type CodexRealtimeConnectionStatus,
   type CodexRealtimeEvent,
 } from '~/types/codex-realtime'
 import type {
@@ -31,23 +29,42 @@ import type { CodexOperationAccepted } from '~/types/codex-turn'
 import {
   WorkspaceSelectionState,
   type CodexWorkspace,
+  type CodexWorkspaceExecutionPreferences,
+  type CodexWorkspaceExecutionPreferencesResult,
+  type CodexWorkspaceExecutionPreferencesUpdate,
 } from '~/types/codex-workspace'
 import type { CodexTaskRoute } from '~/types/routes'
 import { createCodexIdempotencyKey } from '~/services/api/codex-api-client'
 import {
   createCodexSessionProjection,
-  reduceCodexRealtimeEvent,
+  evictCodexTimelineBodies,
+  prependCodexHistoryPage,
+  reduceCodexRealtimeBatch,
+  replaceCodexTimelineItem,
   replaceCodexHosts,
   replaceCodexThreadsForQuery,
   replaceCodexWorkspacesForHost,
+  restoreCodexTimelineBodies,
+  upsertCodexTimelineItem,
   type CodexSessionProjection,
 } from '~/utils/codex-event-reducer'
 import { validateCodexRealtimeEvent } from '~/utils/codex-event-validator'
+import { getCodexRealtimeWriteBlockReason } from '~/utils/codex-realtime-write-guard'
 
 interface PendingCodexThreadStart {
   requestKey: string
   idempotencyKey: string
   operation: CodexOperationAccepted | null
+}
+
+/** 内存中的失败发送记录；只用于用户明确重试，绝不建立离线自动队列。 */
+interface FailedCodexTurnSubmission {
+  clientOperationId: string
+  hostId: string
+  threadId: string
+  message: string
+  execution: CodexExecutionOptions
+  activeTurn: boolean
 }
 
 interface CodexInFlightLoad {
@@ -58,6 +75,8 @@ interface CodexInFlightLoad {
 let hostsLoadInFlight: Promise<void> | null = null
 let workspacesLoadInFlight: CodexInFlightLoad | null = null
 let threadsLoadInFlight: CodexInFlightLoad | null = null
+let authorityRefreshInFlight: CodexInFlightLoad | null = null
+let historyLoadInFlight: CodexInFlightLoad | null = null
 let sessionLoadGeneration = 0
 
 interface CodexSessionStoreState {
@@ -69,6 +88,8 @@ interface CodexSessionStoreState {
   selectionError: string | null
   loading: boolean
   pendingTurnByThreadId: Record<string, CodexOperationAccepted>
+  failedTurnByOperationId: Record<string, FailedCodexTurnSubmission>
+  confirmationRequiredOperationIds: string[]
   pendingThreadStart: PendingCodexThreadStart | null
   resumedThreadIds: string[]
   lastError: ApiErrorPayload | null
@@ -77,6 +98,9 @@ interface CodexSessionStoreState {
   showArchivedThreads: boolean
   threadNextCursor: string | null
   threadLoadRequestId: number
+  snapshotRecoveryInFlight: boolean
+  snapshotReplayBuffer: CodexRealtimeEvent[]
+  snapshotRecoveryGeneration: number
 }
 
 const compareDescending = (left: string, right: string): number =>
@@ -113,6 +137,42 @@ const DEFAULT_CODEX_EXECUTION_OPTIONS: CodexExecutionOptions = {
   approval_policy: CodexApprovalPolicy.Untrusted,
 }
 
+const isCodexTurnSubmissionTimeout = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false
+  const normalized = error as ApiErrorPayload
+  if (normalized.statusCode === 408) return true
+  if (normalized.code === 'ETIMEDOUT' || normalized.errorCode === 'ETIMEDOUT')
+    return true
+  return (
+    normalized.cause instanceof Error &&
+    (normalized.cause.name === 'TimeoutError' ||
+      normalized.cause.name === 'AbortError')
+  )
+}
+
+/**
+ * 发送资格只由连接状态机决定，不能由页面是否可见或 socket 到达时间推断。
+ *
+ * 返回值可直接用于 UI 提示和 action 边界拦截，保证快捷键、失败重试和未来调用方
+ * 共享同一语义；离线时绝不创建本地待发送队列。
+ */
+export const getCodexTurnSubmissionBlockReason = (
+  status: CodexRealtimeConnectionStatus,
+): string | null => getCodexRealtimeWriteBlockReason(status, 'turn_submission')
+
+/** 将已由服务端授权收敛的工作区偏好转换为创建或继续会话所需的执行字段。 */
+const toCodexExecutionOptions = (
+  preferences: CodexWorkspaceExecutionPreferences | null | undefined,
+): CodexExecutionOptions =>
+  preferences
+    ? {
+        model: preferences.model,
+        reasoning_effort: preferences.reasoning_effort,
+        sandbox_mode: preferences.sandbox_mode,
+        approval_policy: preferences.approval_policy,
+      }
+    : { ...DEFAULT_CODEX_EXECUTION_OPTIONS }
+
 export const useCodexSessionStore = defineStore('codex-session', {
   state: (): CodexSessionStoreState => ({
     projection: createCodexSessionProjection(),
@@ -123,6 +183,8 @@ export const useCodexSessionStore = defineStore('codex-session', {
     selectionError: null,
     loading: false,
     pendingTurnByThreadId: {},
+    failedTurnByOperationId: {},
+    confirmationRequiredOperationIds: [],
     pendingThreadStart: null,
     resumedThreadIds: [],
     lastError: null,
@@ -131,6 +193,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
     showArchivedThreads: false,
     threadNextCursor: null,
     threadLoadRequestId: 0,
+    snapshotRecoveryInFlight: false,
+    snapshotReplayBuffer: [],
+    snapshotRecoveryGeneration: 0,
   }),
   getters: {
     hosts(state): CodexHost[] {
@@ -167,14 +232,11 @@ export const useCodexSessionStore = defineStore('codex-session', {
             return false
           }
           if (!normalizedSearchTerm) return true
-          const workspace = state.projection.workspacesById[thread.workspace_id]
-          return [
-            thread.display_name,
-            workspace?.display_name ?? '',
-            workspace?.default_branch ?? '',
-          ].some((value) =>
-            value.toLocaleLowerCase().includes(normalizedSearchTerm),
-          )
+          // 服务端已经按 thread title 过滤；本地兜底也只能检查同一个标题字段，
+          // 避免工作区名称、分支或正文类数据扩大搜索结果。
+          return thread.display_name
+            .toLocaleLowerCase()
+            .includes(normalizedSearchTerm)
         },
       )
       return sortThreads(items)
@@ -191,14 +253,11 @@ export const useCodexSessionStore = defineStore('codex-session', {
         ? (state.projection.threadsById[state.selectedThreadId] ?? null)
         : null
     },
-    selectedTimeline(state): CodexTimelineItem[] {
+    selectedTimeline(state): CodexTimelineRenderableItem[] {
       if (!state.selectedThreadId) return []
-      const ids =
-        state.projection.orderedItemIdsByThread[state.selectedThreadId] ?? []
-      return ids.flatMap((itemId) => {
-        const item = state.projection.itemsById[itemId]
-        return item ? [item] : []
-      })
+      return (
+        state.projection.timelineItemsByThread[state.selectedThreadId] ?? []
+      )
     },
     selectedHistoryStatus(state): CodexThreadHistoryStatus | null {
       if (!state.selectedThreadId) return null
@@ -282,6 +341,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
           collection.items,
         )
         this.reconcileSelections()
+        this.resetExecutionOptions()
       })()
       workspacesLoadInFlight = { key: hostId, promise: request }
       try {
@@ -320,6 +380,64 @@ export const useCodexSessionStore = defineStore('codex-session', {
         { is_pinned: isPinned },
       )
       this.projection.workspacesById[updated.workspace_id] = updated
+    },
+
+    async loadWorkspaceExecutionPreferences(): Promise<CodexWorkspaceExecutionPreferencesResult | null> {
+      const hostId = this.selectedHostId
+      const workspaceId = this.selectedWorkspaceId
+      if (!hostId || !workspaceId) return null
+      const result =
+        await createCodexWorkspacesClient().readExecutionPreferences(
+          hostId,
+          workspaceId,
+        )
+      if (
+        hostId !== this.selectedHostId ||
+        workspaceId !== this.selectedWorkspaceId
+      ) {
+        return null
+      }
+      this.applyExecutionPreferencesResult(result)
+      return result
+    },
+
+    async updateWorkspaceExecutionPreferences(
+      request: CodexWorkspaceExecutionPreferencesUpdate,
+    ): Promise<CodexWorkspaceExecutionPreferencesResult> {
+      const hostId = this.selectedHostId
+      const workspaceId = this.selectedWorkspaceId
+      if (!hostId || !workspaceId) {
+        throw new Error('更新执行偏好前必须选择主机和项目。')
+      }
+      const result =
+        await createCodexWorkspacesClient().updateExecutionPreferences(
+          hostId,
+          workspaceId,
+          request,
+        )
+      if (
+        hostId === this.selectedHostId &&
+        workspaceId === this.selectedWorkspaceId
+      ) {
+        this.applyExecutionPreferencesResult(result)
+      }
+      return result
+    },
+
+    applyExecutionPreferencesResult(
+      result: CodexWorkspaceExecutionPreferencesResult,
+    ): void {
+      const workspace = this.projection.workspacesById[result.workspace_id]
+      if (workspace) {
+        this.projection.workspacesById[result.workspace_id] = {
+          ...workspace,
+          execution_preferences: result.effective_preferences,
+        }
+      }
+      this.executionOptions = toCodexExecutionOptions(
+        result.effective_preferences,
+      )
+      this.clearPendingThreadStart()
     },
 
     async loadThreads(workspaceId?: string | null): Promise<void> {
@@ -599,17 +717,19 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
     },
 
-    async loadThreadSnapshot(
-      historyCursor: string | null = null,
-    ): Promise<void> {
+    async loadThreadSnapshot(): Promise<void> {
       if (!this.selectedHostId || !this.selectedThreadId) return
-      const snapshot = await createCodexThreadsClient().read(
-        this.selectedHostId,
-        this.selectedThreadId,
-        historyCursor,
-      )
-      this.applyRealtimeEvent(
-        validateCodexRealtimeEvent({
+      const recoveryGeneration = this.snapshotRecoveryGeneration + 1
+      this.snapshotRecoveryGeneration = recoveryGeneration
+      this.snapshotRecoveryInFlight = true
+      this.snapshotReplayBuffer = []
+      try {
+        const snapshot = await createCodexThreadsClient().read(
+          this.selectedHostId,
+          this.selectedThreadId,
+        )
+        if (recoveryGeneration !== this.snapshotRecoveryGeneration) return
+        const snapshotEvent = validateCodexRealtimeEvent({
           header: {
             kind: 'codex_realtime_event',
             schema_version: CODEX_REALTIME_SCHEMA_VERSION,
@@ -628,15 +748,93 @@ export const useCodexSessionStore = defineStore('codex-session', {
             kind: CodexRealtimeEventType.ThreadSnapshot,
             schema_version: CODEX_REALTIME_SCHEMA_VERSION,
             ...snapshot,
-            append_history: historyCursor !== null,
           },
-        }),
-      )
+        })
+        this.snapshotRecoveryInFlight = false
+        const replay = this.snapshotReplayBuffer
+        this.snapshotReplayBuffer = []
+        this.applyRealtimeEvent(snapshotEvent, { bypassSnapshotRecovery: true })
+        this.applyRealtimeBatch(replay, { bypassSnapshotRecovery: true })
+      } catch (error) {
+        if (recoveryGeneration === this.snapshotRecoveryGeneration) {
+          this.snapshotRecoveryInFlight = false
+          const replay = this.snapshotReplayBuffer
+          this.snapshotReplayBuffer = []
+          this.applyRealtimeBatch(replay, { bypassSnapshotRecovery: true })
+        }
+        throw error
+      } finally {
+        if (recoveryGeneration === this.snapshotRecoveryGeneration) {
+          this.snapshotRecoveryInFlight = false
+          this.snapshotReplayBuffer = []
+        }
+      }
     },
 
     async loadMoreHistory(): Promise<void> {
-      if (!this.selectedHistoryCursor) return
-      await this.loadThreadSnapshot(this.selectedHistoryCursor)
+      const beforeCursor = this.selectedHistoryCursor
+      const hostId = this.selectedHostId
+      const threadId = this.selectedThreadId
+      if (!beforeCursor || !hostId || !threadId) return
+      const requestGeneration = sessionLoadGeneration
+      const requestKey = [
+        requestGeneration,
+        hostId,
+        threadId,
+        beforeCursor,
+      ].join(':')
+      if (historyLoadInFlight?.key === requestKey)
+        return historyLoadInFlight.promise
+
+      const request = (async (): Promise<void> => {
+        const page = await createCodexThreadsClient().readHistory(
+          hostId,
+          threadId,
+          beforeCursor,
+        )
+        // 选择或 session 在请求期间变化时，旧页不能覆盖新窗口的 cursor。
+        if (
+          requestGeneration !== sessionLoadGeneration ||
+          this.selectedHostId !== hostId ||
+          this.selectedThreadId !== threadId ||
+          this.selectedHistoryCursor !== beforeCursor
+        ) {
+          return
+        }
+        this.projection = prependCodexHistoryPage(
+          this.projection,
+          threadId,
+          page,
+        )
+      })()
+      historyLoadInFlight = { key: requestKey, promise: request }
+      try {
+        await request
+      } finally {
+        if (historyLoadInFlight?.promise === request) historyLoadInFlight = null
+      }
+    },
+
+    evictTimelineBodies(protectedItemIds: readonly string[]): void {
+      if (!this.selectedThreadId) return
+      this.projection = evictCodexTimelineBodies(
+        this.projection,
+        this.selectedThreadId,
+        new Set(protectedItemIds),
+      )
+    },
+
+    async reloadTimelineBody(itemId: string): Promise<void> {
+      if (!this.selectedHostId || !this.selectedThreadId) return
+      const reloaded = await createCodexThreadsClient().readHistoryItems(
+        this.selectedHostId,
+        this.selectedThreadId,
+        [itemId],
+      )
+      this.projection = restoreCodexTimelineBodies(
+        this.projection,
+        reloaded.items,
+      )
     },
 
     async ensureThreadReady(): Promise<void> {
@@ -653,6 +851,10 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async sendMessage(message: string): Promise<CodexOperationAccepted> {
+      const submissionBlockReason = getCodexTurnSubmissionBlockReason(
+        useCodexRealtimeStore().status,
+      )
+      if (submissionBlockReason) throw new Error(submissionBlockReason)
       const normalizedMessage = message.trim()
       if (
         !this.selectedHostId ||
@@ -667,36 +869,98 @@ export const useCodexSessionStore = defineStore('codex-session', {
       if (thread?.archived) {
         throw new Error('已归档会话不能发送新消息。')
       }
-      const active = Boolean(thread?.active_turn_id)
-      const client = createCodexThreadsClient()
-      if (!active) await this.ensureThreadReady()
-      const idempotencyKey = createCodexIdempotencyKey()
-      const accepted = active
-        ? await client.steer(
-            hostId,
-            threadId,
-            {
-              message: normalizedMessage,
-              execution: this.executionOptions,
-            },
-            idempotencyKey,
+      const submission: FailedCodexTurnSubmission = {
+        clientOperationId: createCodexIdempotencyKey(),
+        hostId,
+        threadId,
+        message: normalizedMessage,
+        execution: { ...this.executionOptions },
+        activeTurn: Boolean(thread?.active_turn_id),
+      }
+      this.appendOptimisticUserMessage(
+        submission.message,
+        submission.clientOperationId,
+      )
+      return this.submitTurnMessage(submission, thread?.workspace_id ?? null)
+    },
+
+    /** 用户明确触发失败消息的重试，复用原 client operation id。 */
+    async retryMessage(
+      clientOperationId: string,
+    ): Promise<CodexOperationAccepted> {
+      const submissionBlockReason = getCodexTurnSubmissionBlockReason(
+        useCodexRealtimeStore().status,
+      )
+      if (submissionBlockReason) throw new Error(submissionBlockReason)
+      const submission = this.failedTurnByOperationId[clientOperationId]
+      if (!submission) throw new Error('待重试的消息已不存在。')
+      this.confirmationRequiredOperationIds =
+        this.confirmationRequiredOperationIds.filter(
+          (operationId) => operationId !== clientOperationId,
+        )
+      this.markOptimisticUserMessageSending(clientOperationId)
+      return this.submitTurnMessage(submission, this.selectedWorkspaceId)
+    },
+
+    async submitTurnMessage(
+      submission: FailedCodexTurnSubmission,
+      workspaceId: string | null,
+    ): Promise<CodexOperationAccepted> {
+      try {
+        if (!submission.activeTurn) await this.ensureThreadReady()
+        const request = {
+          client_operation_id: submission.clientOperationId,
+          message: submission.message,
+          execution: submission.execution,
+        }
+        const client = createCodexThreadsClient()
+        const accepted = submission.activeTurn
+          ? await client.steer(submission.hostId, submission.threadId, request)
+          : await client.startTurn(
+              submission.hostId,
+              submission.threadId,
+              request,
+            )
+        this.pendingTurnByThreadId[submission.threadId] = accepted
+        Reflect.deleteProperty(
+          this.failedTurnByOperationId,
+          submission.clientOperationId,
+        )
+        this.confirmationRequiredOperationIds =
+          this.confirmationRequiredOperationIds.filter(
+            (operationId) => operationId !== submission.clientOperationId,
           )
-        : await client.startTurn(
-            hostId,
-            threadId,
-            {
-              message: normalizedMessage,
-              execution: this.executionOptions,
-            },
-            idempotencyKey,
-          )
-      this.pendingTurnByThreadId[threadId] = accepted
-      this.appendOptimisticUserMessage(normalizedMessage, idempotencyKey)
-      await this.loadThreads(thread?.workspace_id ?? this.selectedWorkspaceId)
-      return accepted
+        await this.loadThreads(workspaceId)
+        return accepted
+      } catch (error) {
+        this.failedTurnByOperationId[submission.clientOperationId] = submission
+        if (isCodexTurnSubmissionTimeout(error)) {
+          if (
+            !this.confirmationRequiredOperationIds.includes(
+              submission.clientOperationId,
+            )
+          ) {
+            this.confirmationRequiredOperationIds.push(
+              submission.clientOperationId,
+            )
+          }
+        } else {
+          this.confirmationRequiredOperationIds =
+            this.confirmationRequiredOperationIds.filter(
+              (operationId) => operationId !== submission.clientOperationId,
+            )
+        }
+        this.markOptimisticUserMessageFailed(submission.clientOperationId)
+        throw error
+      }
     },
 
     async interruptTurn(): Promise<CodexOperationAccepted> {
+      const blockReason = getCodexRealtimeWriteBlockReason(
+        useCodexRealtimeStore().status,
+        'interrupt',
+      )
+      if (blockReason) throw new Error(blockReason)
       if (!this.selectedHostId || !this.selectedThreadId) {
         throw new Error('中断操作前必须选择线程。')
       }
@@ -708,6 +972,11 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async compactThread(): Promise<CodexOperationAccepted> {
+      const blockReason = getCodexRealtimeWriteBlockReason(
+        useCodexRealtimeStore().status,
+        'compact',
+      )
+      if (blockReason) throw new Error(blockReason)
       if (!this.selectedHostId || !this.selectedThreadId) {
         throw new Error('压缩操作前必须选择线程。')
       }
@@ -718,48 +987,92 @@ export const useCodexSessionStore = defineStore('codex-session', {
       return accepted
     },
 
+    /**
+     * 将当前选择恢复为服务端权威视图；同一选择的并发请求必须复用一次只读同步，
+     * 防止 stalled 提示和连接恢复同时读取时交错覆盖快照或扩大 Agent 读取负载。
+     */
     async refreshAuthority(): Promise<void> {
-      await this.loadHosts()
-      if (this.selectedHostId) {
-        await Promise.all([this.loadWorkspaces(), this.loadThreads()])
-        this.resetExecutionOptions()
-      }
-      if (!this.selectedThreadId) return
-      let lastError: unknown
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          await this.loadThreadSnapshot()
-          return
-        } catch (error) {
-          lastError = error
-          if (attempt < 2) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 250 * (attempt + 1)),
-            )
+      const requestKey = [
+        sessionLoadGeneration,
+        this.selectedHostId ?? '',
+        this.selectedWorkspaceId ?? '',
+        this.selectedThreadId ?? '',
+      ].join(':')
+      if (authorityRefreshInFlight?.key === requestKey)
+        return authorityRefreshInFlight.promise
+
+      const request = (async (): Promise<void> => {
+        await this.loadHosts()
+        if (this.selectedHostId) {
+          await Promise.all([this.loadWorkspaces(), this.loadThreads()])
+          this.resetExecutionOptions()
+        }
+        if (!this.selectedThreadId) return
+        let lastError: unknown
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            await this.loadThreadSnapshot()
+            return
+          } catch (error) {
+            lastError = error
+            if (attempt < 2) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 250 * (attempt + 1)),
+              )
+            }
           }
         }
+        throw lastError
+      })()
+      authorityRefreshInFlight = { key: requestKey, promise: request }
+      try {
+        await request
+      } finally {
+        if (authorityRefreshInFlight?.promise === request)
+          authorityRefreshInFlight = null
       }
-      throw lastError
     },
 
-    applyRealtimeEvent(event: CodexRealtimeEvent): void {
-      this.projection = reduceCodexRealtimeEvent(this.projection, event)
-      if (event.detail.kind === CodexRealtimeEventType.HostSnapshot) {
-        this.reconcileSelections()
+    applyRealtimeEvent(
+      event: CodexRealtimeEvent,
+      options: { bypassSnapshotRecovery?: boolean } = {},
+    ): void {
+      this.applyRealtimeBatch([event], options)
+    },
+
+    /**
+     * 同一个网络批次只提交一次投影，避免流式 delta 逐条触发 Vue 刷新。
+     */
+    applyRealtimeBatch(
+      events: readonly CodexRealtimeEvent[],
+      options: { bypassSnapshotRecovery?: boolean } = {},
+    ): void {
+      if (this.snapshotRecoveryInFlight && !options.bypassSnapshotRecovery) {
+        this.snapshotReplayBuffer.push(...events)
+        return
       }
-      if (
-        event.header.thread_id &&
-        (event.detail.kind === CodexRealtimeEventType.TurnStarted ||
-          event.detail.kind === CodexRealtimeEventType.TurnCompleted ||
-          event.detail.kind === CodexRealtimeEventType.TurnFailed ||
-          event.detail.kind === CodexRealtimeEventType.TurnInterrupted ||
-          event.detail.kind === CodexRealtimeEventType.ItemUpsert)
-      ) {
-        Reflect.deleteProperty(
-          this.pendingTurnByThreadId,
-          event.header.thread_id,
-        )
+      let selectionsNeedReconciliation = false
+      const resolvedThreadIds = new Set<string>()
+      for (const event of events) {
+        if (event.detail.kind === CodexRealtimeEventType.HostSnapshot) {
+          selectionsNeedReconciliation = true
+        }
+        if (
+          event.header.thread_id &&
+          (event.detail.kind === CodexRealtimeEventType.TurnStarted ||
+            event.detail.kind === CodexRealtimeEventType.TurnCompleted ||
+            event.detail.kind === CodexRealtimeEventType.TurnFailed ||
+            event.detail.kind === CodexRealtimeEventType.TurnInterrupted ||
+            event.detail.kind === CodexRealtimeEventType.ItemUpsert)
+        ) {
+          resolvedThreadIds.add(event.header.thread_id)
+        }
       }
+      this.projection = reduceCodexRealtimeBatch(this.projection, events)
+      for (const threadId of resolvedThreadIds) {
+        Reflect.deleteProperty(this.pendingTurnByThreadId, threadId)
+      }
+      if (selectionsNeedReconciliation) this.reconcileSelections()
     },
 
     removeHost(hostId: string): void {
@@ -809,9 +1122,12 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
     },
 
-    appendOptimisticUserMessage(message: string, idempotencyKey: string): void {
+    appendOptimisticUserMessage(
+      message: string,
+      clientOperationId: string,
+    ): void {
       if (!this.selectedThreadId) return
-      const itemId = `local-${idempotencyKey}`
+      const itemId = `local-${clientOperationId}`
       const item: CodexTextTimelineItem = {
         header: {
           item_id: itemId,
@@ -819,8 +1135,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
           turn_id: this.selectedThread?.active_turn_id ?? null,
           detail_kind: CodexTimelineItemKind.UserMessage,
           schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
-          status: CodexTimelineItemStatus.Completed,
+          status: CodexTimelineItemStatus.Streaming,
           created_at: new Date().toISOString(),
+          client_operation_id: clientOperationId,
         },
         detail: {
           kind: CodexTimelineItemKind.UserMessage,
@@ -828,15 +1145,51 @@ export const useCodexSessionStore = defineStore('codex-session', {
           text: message,
         },
       }
-      this.projection.itemsById[itemId] = item
-      this.projection.itemSourceById[itemId] =
-        CodexTimelineItemSource.Optimistic
-      const current =
-        this.projection.orderedItemIdsByThread[this.selectedThreadId] ?? []
-      this.projection.orderedItemIdsByThread[this.selectedThreadId] = [
-        ...current,
-        itemId,
-      ]
+      this.projection = upsertCodexTimelineItem(
+        this.projection,
+        item,
+        CodexTimelineItemSource.Optimistic,
+      )
+    },
+
+    markOptimisticUserMessageSending(clientOperationId: string): void {
+      this.updateOptimisticUserMessageStatus(
+        clientOperationId,
+        CodexTimelineItemStatus.Streaming,
+      )
+    },
+
+    markOptimisticUserMessageFailed(clientOperationId: string): void {
+      this.updateOptimisticUserMessageStatus(
+        clientOperationId,
+        CodexTimelineItemStatus.Failed,
+      )
+    },
+
+    updateOptimisticUserMessageStatus(
+      clientOperationId: string,
+      status: CodexTimelineItemStatus,
+    ): void {
+      const itemId = `local-${clientOperationId}`
+      const item = this.projection.itemsById[itemId]
+      if (
+        !item ||
+        item.detail.kind !== CodexTimelineItemKind.UserMessage ||
+        this.projection.itemSourceById[itemId] !==
+          CodexTimelineItemSource.Optimistic
+      ) {
+        return
+      }
+      // 上方判别式已验证为 user message；显式收窄可保留 header/detail 的联合关联。
+      const userMessage = item as CodexTextTimelineItem
+      this.projection = replaceCodexTimelineItem(this.projection, {
+        ...userMessage,
+        header: {
+          ...userMessage.header,
+          detail_kind: CodexTimelineItemKind.UserMessage,
+          status,
+        },
+      })
     },
 
     clearSession(): void {
@@ -844,11 +1197,15 @@ export const useCodexSessionStore = defineStore('codex-session', {
       hostsLoadInFlight = null
       workspacesLoadInFlight = null
       threadsLoadInFlight = null
+      authorityRefreshInFlight = null
+      historyLoadInFlight = null
       this.projection = createCodexSessionProjection()
       this.selectedHostId = null
       this.selectedWorkspaceId = null
       this.selectedThreadId = null
       this.pendingTurnByThreadId = {}
+      this.failedTurnByOperationId = {}
+      this.confirmationRequiredOperationIds = []
       this.pendingThreadStart = null
       this.resumedThreadIds = []
       this.lastError = null
@@ -857,32 +1214,15 @@ export const useCodexSessionStore = defineStore('codex-session', {
       this.showArchivedThreads = false
       this.threadNextCursor = null
       this.threadLoadRequestId = 0
+      this.snapshotRecoveryInFlight = false
+      this.snapshotReplayBuffer = []
+      this.snapshotRecoveryGeneration += 1
     },
 
     resetExecutionOptions(): void {
-      const capabilities = this.selectedHost?.capabilities
-      const authStore = useAuthStore()
-      const allowedSandboxModes = CODEX_SANDBOX_RESTRICTION_ORDER.filter(
-        (mode) =>
-          capabilities?.sandbox_modes.includes(mode) &&
-          (mode !== CodexSandboxMode.DangerFullAccess ||
-            authStore.canScope(AuthScope.CodexFullAccess)),
+      this.executionOptions = toCodexExecutionOptions(
+        this.selectedWorkspace?.execution_preferences,
       )
-      const allowedApprovalPolicies = CODEX_APPROVAL_RESTRICTION_ORDER.filter(
-        (policy) => capabilities?.approval_policies.includes(policy),
-      )
-      this.executionOptions = {
-        model: capabilities?.model_ids[0] ?? null,
-        reasoning_effort: capabilities?.reasoning_efforts[0] ?? null,
-        sandbox_mode:
-          allowedSandboxModes.at(-1) ??
-          capabilities?.sandbox_modes[0] ??
-          CodexSandboxMode.WorkspaceWrite,
-        approval_policy:
-          allowedApprovalPolicies.at(-1) ??
-          capabilities?.approval_policies[0] ??
-          CodexApprovalPolicy.Untrusted,
-      }
     },
   },
 })

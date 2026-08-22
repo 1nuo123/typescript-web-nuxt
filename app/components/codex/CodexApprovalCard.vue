@@ -17,16 +17,16 @@
     </header>
 
     <dl class="m-0 grid gap-2 text-xs">
-      <div v-if="approval.display_summary.command" class="grid gap-1">
+      <div v-if="commandSummary?.command" class="grid gap-1">
         <dt class="text-ink-muted">命令</dt>
         <dd
           class="m-0 overflow-x-auto rounded-md bg-surface-muted p-2 font-mono break-all"
         >
-          {{ approval.display_summary.command }}
+          {{ commandSummary.command }}
         </dd>
       </div>
       <div
-        v-for="(action, index) in approval.display_summary.command_actions"
+        v-for="(action, index) in commandSummary?.command_actions ?? []"
         :key="`${approval.approval_id}-action-${index}`"
         class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"
       >
@@ -39,7 +39,7 @@
         </dd>
       </div>
       <div
-        v-for="change in approval.display_summary.file_changes"
+        v-for="change in fileChangeSummary?.file_changes ?? []"
         :key="`${approval.approval_id}-${change.path}`"
         class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"
       >
@@ -52,16 +52,16 @@
         </dd>
       </div>
       <div
-        v-if="approval.display_summary.permission_names.length"
+        v-if="permissionsSummary?.permission_names.length"
         class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"
       >
         <dt class="text-ink-muted">额外权限</dt>
         <dd class="m-0 break-all">
-          {{ approval.display_summary.permission_names.join('、') }}
+          {{ permissionsSummary.permission_names.join('、') }}
         </dd>
       </div>
       <div
-        v-if="approval.display_summary.network_requested"
+        v-if="permissionsSummary?.network_requested"
         class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"
       >
         <dt class="text-ink-muted">网络权限</dt>
@@ -76,10 +76,17 @@
       :description="decisionError"
     />
     <footer class="flex flex-wrap items-center justify-end gap-2">
-      <span v-if="decisionAcknowledged" class="mr-auto text-xs text-accent">
+      <span
+        v-if="decisionAcknowledged"
+        class="mr-auto text-xs text-accent"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         已提交，等待 Agent 应用结果
       </span>
       <BaseButton
+        v-if="allows(CodexApprovalDecision.Decline)"
         size="sm"
         variant="secondary"
         :disabled="submitting"
@@ -88,16 +95,58 @@
         拒绝
       </BaseButton>
       <BaseButton
+        v-if="allows(CodexApprovalDecision.Cancel)"
         size="sm"
-        :disabled="submitting || !canAccept"
-        :title="canAccept ? undefined : '当前账号缺少接受该请求所需的权限'"
-        @click="requestAccept"
+        variant="secondary"
+        :disabled="submitting"
+        @click="submitDecision(CodexApprovalDecision.Cancel)"
+      >
+        终止
+      </BaseButton>
+      <BaseButton
+        v-if="allows(CodexApprovalDecision.Accept)"
+        size="sm"
+        :disabled="submitting || !canGrant"
+        :title="canGrant ? undefined : '当前账号缺少接受该请求所需的权限'"
+        @click="requestGrant(CodexApprovalDecision.Accept)"
       >
         {{
           approval.risk_level === CodexApprovalRiskLevel.High
             ? '验证并允许'
             : '允许一次'
         }}
+      </BaseButton>
+      <BaseButton
+        v-if="allows(CodexApprovalDecision.AcceptForSession)"
+        size="sm"
+        variant="secondary"
+        :disabled="submitting || !canGrant"
+        :title="canGrant ? undefined : '当前账号缺少接受该请求所需的权限'"
+        @click="requestGrant(CodexApprovalDecision.AcceptForSession)"
+      >
+        本会话允许
+      </BaseButton>
+      <BaseButton
+        v-if="allows(CodexApprovalDecision.AcceptWithExecpolicyAmendment)"
+        size="sm"
+        variant="secondary"
+        :disabled="submitting || !canGrant"
+        :title="canGrant ? undefined : '当前账号缺少接受该请求所需的权限'"
+        @click="
+          requestGrant(CodexApprovalDecision.AcceptWithExecpolicyAmendment)
+        "
+      >
+        应用命令策略
+      </BaseButton>
+      <BaseButton
+        v-if="allows(CodexApprovalDecision.ApplyNetworkPolicyAmendment)"
+        size="sm"
+        variant="secondary"
+        :disabled="submitting || !canGrant"
+        :title="canGrant ? undefined : '当前账号缺少接受该请求所需的权限'"
+        @click="requestGrant(CodexApprovalDecision.ApplyNetworkPolicyAmendment)"
+      >
+        应用网络策略
       </BaseButton>
     </footer>
 
@@ -155,6 +204,7 @@ const stepUpOpen = ref(false)
 const stepUpPassword = ref('')
 const stepUpError = ref('')
 const stepUpSubmitting = ref(false)
+const stepUpDecision = ref(CodexApprovalDecision.Accept)
 
 const decisionState = computed(
   () =>
@@ -178,26 +228,40 @@ const riskTone = computed(() =>
 const riskLabel = computed(() => {
   if (props.approval.risk_level === CodexApprovalRiskLevel.High)
     return '增强验证'
-  return props.approval.display_summary.read_only ? '只读' : '单次'
+  return commandSummary.value?.read_only ? '只读' : '单次'
 })
-const canAccept = computed(() => {
+const commandSummary = computed(() =>
+  props.approval.approval_kind === CodexApprovalKind.Command
+    ? props.approval.display_summary
+    : null,
+)
+const fileChangeSummary = computed(() =>
+  props.approval.approval_kind === CodexApprovalKind.FileChange
+    ? props.approval.display_summary
+    : null,
+)
+const permissionsSummary = computed(() =>
+  props.approval.approval_kind === CodexApprovalKind.Permissions
+    ? props.approval.display_summary
+    : null,
+)
+const canGrant = computed(() => {
   const requiredScopes = new Set<AuthScope>()
-  if (
-    props.approval.approval_kind === CodexApprovalKind.FileChange ||
-    props.approval.display_summary.file_scope.length > 0 ||
-    props.approval.display_summary.file_changes.length > 0 ||
-    props.approval.display_summary.extra_root_requested
-  ) {
-    requiredScopes.add(AuthScope.CodexFiles)
-  }
-  if (props.approval.approval_kind === CodexApprovalKind.Command) {
-    requiredScopes.add(AuthScope.CodexTerminal)
-  }
-  if (props.approval.display_summary.network_requested) {
-    requiredScopes.add(AuthScope.CodexNetwork)
-  }
-  if (props.approval.display_summary.extra_root_requested) {
-    requiredScopes.add(AuthScope.CodexFullAccess)
+  switch (props.approval.approval_kind) {
+    case CodexApprovalKind.Command:
+      requiredScopes.add(AuthScope.CodexTerminal)
+      break
+    case CodexApprovalKind.FileChange:
+      requiredScopes.add(AuthScope.CodexFiles)
+      break
+    case CodexApprovalKind.Permissions:
+      if (props.approval.display_summary.network_requested) {
+        requiredScopes.add(AuthScope.CodexNetwork)
+      }
+      if (props.approval.display_summary.extra_root_requested) {
+        requiredScopes.add(AuthScope.CodexFullAccess)
+      }
+      break
   }
   return [...requiredScopes].every((scope) => authStore.canScope(scope))
 })
@@ -205,19 +269,23 @@ const canAccept = computed(() => {
 const actionLabel = (actionType: string): string =>
   APPROVAL_ACTION_LABELS[actionType] ?? actionType
 
+const allows = (decision: CodexApprovalDecision): boolean =>
+  props.approval.display_summary.allowed_actions.includes(decision)
+
 const submitDecision = (decision: CodexApprovalDecision): void => {
   void approvalStore.decide(props.approval, decision).catch(() => undefined)
 }
 
-const requestAccept = (): void => {
-  if (!canAccept.value) return
+const requestGrant = (decision: CodexApprovalDecision): void => {
+  if (!canGrant.value) return
   if (props.approval.risk_level === CodexApprovalRiskLevel.High) {
+    stepUpDecision.value = decision
     stepUpOpen.value = true
     stepUpPassword.value = ''
     stepUpError.value = ''
     return
   }
-  submitDecision(CodexApprovalDecision.Accept)
+  submitDecision(decision)
 }
 
 const closeStepUp = (): void => {
@@ -234,11 +302,7 @@ const submitStepUp = async (): Promise<void> => {
       stepUpPassword.value,
       AuthStepUpPurpose.CodexHighRiskApproval,
     )
-    await approvalStore.decide(
-      props.approval,
-      CodexApprovalDecision.Accept,
-      grant,
-    )
+    await approvalStore.decide(props.approval, stepUpDecision.value, grant)
     closeStepUp()
   } catch (error) {
     stepUpError.value =

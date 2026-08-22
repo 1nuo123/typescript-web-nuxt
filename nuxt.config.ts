@@ -24,9 +24,13 @@ const runtimeAdminOpsEnabled =
   process.env.NUXT_PUBLIC_ADMIN_OPS_ENABLED === ENABLED_ENV_VALUE
 const runtimeCodexFeatureEnabled =
   process.env.NUXT_PUBLIC_CODEX_FEATURE_ENABLED === ENABLED_ENV_VALUE
+const runtimeCodexDiagnosticsUploadEnabled =
+  process.env.NUXT_PUBLIC_CODEX_DIAGNOSTICS_UPLOAD_ENABLED === ENABLED_ENV_VALUE
+const runtimeCodexPerformanceDiagnosticsEnabled =
+  process.env.NUXT_PUBLIC_CODEX_PERFORMANCE_DIAGNOSTICS_ENABLED ===
+  ENABLED_ENV_VALUE
+const runtimeCodexPerformanceDiagnosticsSampleRate = 0.1
 const isE2e = process.env.NUXT_E2E === ENABLED_ENV_VALUE
-const enablePwaModule =
-  process.env.NODE_ENV !== 'test' && process.env.VITEST !== 'true' && !isE2e
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -44,46 +48,7 @@ export default defineNuxtConfig({
     '@nuxt/eslint',
     ...(!isE2e ? ['@nuxt/hints'] : []),
     '@pinia/nuxt',
-    ...(enablePwaModule ? ['@vite-pwa/nuxt'] : []),
   ],
-
-  pwa: {
-    registerType: 'autoUpdate',
-    manifest: {
-      id: '/codex/tasks',
-      name: 'Codex 远程控制',
-      short_name: 'Codex',
-      description: '安全控制本机 Codex 任务',
-      display: 'standalone',
-      start_url: '/codex/tasks',
-      scope: '/',
-      background_color: '#fafafa',
-      theme_color: '#ffffff',
-      icons: [
-        {
-          src: '/icon-192.png',
-          sizes: '192x192',
-          type: 'image/png',
-          purpose: 'any',
-        },
-        {
-          src: '/icon-512.png',
-          sizes: '512x512',
-          type: 'image/png',
-          purpose: 'any maskable',
-        },
-      ],
-    },
-    workbox: {
-      cleanupOutdatedCaches: true,
-      navigateFallback: '/',
-      navigateFallbackDenylist: [/^\/auth\//, /^\/codex\//, /^\/internal\//],
-      runtimeCaching: [],
-    },
-    devOptions: {
-      enabled: false,
-    },
-  },
 
   css: ['~/assets/css/main.css'],
 
@@ -96,6 +61,11 @@ export default defineNuxtConfig({
       apiTimeout: runtimeApiTimeout,
       adminOpsEnabled: runtimeAdminOpsEnabled,
       codexFeatureEnabled: runtimeCodexFeatureEnabled,
+      codexDiagnosticsUploadEnabled: runtimeCodexDiagnosticsUploadEnabled,
+      codexPerformanceDiagnosticsEnabled:
+        runtimeCodexPerformanceDiagnosticsEnabled,
+      codexPerformanceDiagnosticsSampleRate:
+        runtimeCodexPerformanceDiagnosticsSampleRate,
       codexRealtimePath:
         process.env.NUXT_PUBLIC_CODEX_REALTIME_PATH || '/codex/events',
       codexWsBaseUrl: process.env.NUXT_PUBLIC_CODEX_WS_BASE_URL || '',

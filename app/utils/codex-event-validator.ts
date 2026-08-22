@@ -1,6 +1,8 @@
 import {
+  CODEX_REALTIME_BATCH_PROTOCOL_VERSION,
   CODEX_REALTIME_SCHEMA_VERSION,
   CodexRealtimeEventType,
+  type CodexRealtimeBatch,
   type CodexRealtimeEvent,
 } from '../types/codex-realtime'
 import { CodexThreadHistoryStatus } from '../types/codex-thread'
@@ -13,6 +15,23 @@ import {
 } from './codex-contract-normalizer'
 
 const EVENT_KEYS = new Set(['header', 'detail'])
+const BATCH_KEYS = new Set([
+  'protocol_version',
+  'stream_epoch',
+  'first_cursor',
+  'last_cursor',
+  'barrier',
+  'events',
+])
+const BATCH_BARRIER_EVENT_TYPES = new Set<CodexRealtimeEventType>([
+  CodexRealtimeEventType.TurnCompleted,
+  CodexRealtimeEventType.TurnFailed,
+  CodexRealtimeEventType.TurnInterrupted,
+  CodexRealtimeEventType.ApprovalOpened,
+  CodexRealtimeEventType.ApprovalResolved,
+  CodexRealtimeEventType.StreamGapDetected,
+  CodexRealtimeEventType.ProtocolWarning,
+])
 const HEADER_KEYS = new Set([
   'kind',
   'schema_version',
@@ -96,8 +115,9 @@ const detailKeys = (eventType: CodexRealtimeEventType): ReadonlySet<string> => {
         'turns',
         'items',
         'history_status',
-        'next_history_cursor',
-        'append_history',
+        'history_before_cursor',
+        'history_has_more',
+        'history_revision',
       ])
     case CodexRealtimeEventType.ThreadUpdated:
       return new Set([...shared, 'thread'])
@@ -340,5 +360,57 @@ export const validateCodexRealtimeEvent = (
       )
     }
     throw error
+  }
+}
+
+/**
+ * 校验批次边界与事件 epoch；cursor 是不透明值，因此只验证首尾一致性。
+ */
+export const validateCodexRealtimeBatch = (
+  value: unknown,
+): CodexRealtimeBatch => {
+  if (!isRecord(value)) {
+    throw new CodexRealtimeContractError('Codex实时批次必须是对象。')
+  }
+  rejectUnknownKeys(value, BATCH_KEYS, 'Codex实时批次')
+  if (value.protocol_version !== CODEX_REALTIME_BATCH_PROTOCOL_VERSION) {
+    throw new CodexRealtimeContractError('Codex实时批次协议版本不兼容。')
+  }
+  const streamEpoch = requireString(value, 'stream_epoch')
+  if (typeof value.barrier !== 'boolean') {
+    throw new CodexRealtimeContractError('Codex实时批次barrier必须是布尔值。')
+  }
+  if (!Array.isArray(value.events) || value.events.length === 0) {
+    throw new CodexRealtimeContractError('Codex实时批次必须包含事件。')
+  }
+  if (value.events.length > 64) {
+    throw new CodexRealtimeContractError('Codex实时批次事件数超过上限。')
+  }
+  const events = value.events.map(validateCodexRealtimeEvent)
+  if (events.some((event) => event.header.stream_epoch !== streamEpoch)) {
+    throw new CodexRealtimeContractError('Codex实时批次包含跨epoch事件。')
+  }
+  const firstCursor = events[0]?.header.cursor ?? null
+  const lastCursor = events.at(-1)?.header.cursor ?? null
+  if (value.first_cursor !== firstCursor || value.last_cursor !== lastCursor) {
+    throw new CodexRealtimeContractError('Codex实时批次首尾cursor不匹配。')
+  }
+  if (
+    value.barrier &&
+    events.some(
+      (event) => !BATCH_BARRIER_EVENT_TYPES.has(event.header.detail_kind),
+    )
+  ) {
+    throw new CodexRealtimeContractError(
+      'Codex实时屏障批次只能包含终态、审批、错误或恢复事件。',
+    )
+  }
+  return {
+    protocol_version: CODEX_REALTIME_BATCH_PROTOCOL_VERSION,
+    stream_epoch: streamEpoch,
+    first_cursor: firstCursor,
+    last_cursor: lastCursor,
+    barrier: value.barrier,
+    events,
   }
 }

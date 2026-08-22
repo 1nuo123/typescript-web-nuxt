@@ -87,7 +87,7 @@
       </div>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto p-2">
+    <div ref="threadListContainer" class="min-h-0 flex-1 overflow-y-auto p-2">
       <AppSkeleton v-if="sessionStore.loading" class="h-36" />
       <p
         v-else-if="sessionStore.threads.length === 0"
@@ -103,6 +103,7 @@
         <article
           v-for="thread in sessionStore.threads"
           :key="thread.upstream_thread_id"
+          :data-codex-thread-id="thread.upstream_thread_id"
           class="group relative grid min-w-0 grid-cols-[minmax(0,1fr)_2rem] rounded-md"
           :class="
             thread.upstream_thread_id === sessionStore.selectedThreadId
@@ -192,7 +193,8 @@ import {
   Search,
 } from '@lucide/vue'
 import { CodexThreadStatus, type CodexThread } from '~/types/codex-thread'
-import { buildCodexTaskRoute } from '~/types/routes'
+import { buildCodexTaskRoute, buildCodexTasksRoute } from '~/types/routes'
+import { useCodexThreadListScrollAnchor } from '~/composables/useCodexThreadListScrollAnchor'
 
 const MILLISECONDS_PER_MINUTE = 60_000
 const MINUTES_PER_HOUR = 60
@@ -211,8 +213,42 @@ const threadStatusLabels: Readonly<Record<CodexThreadStatus, string>> = {
 }
 
 const sessionStore = useCodexSessionStore()
+const uiStore = useCodexUiStore()
 const searchTerm = ref(sessionStore.threadSearchTerm)
 const renamingThread = ref<CodexThread | null>(null)
+const threadListContainer = ref<HTMLElement | null>(null)
+const threadListAnchor = useCodexThreadListScrollAnchor(threadListContainer)
+
+const taskRouteFilters = () => ({
+  searchTerm: sessionStore.threadSearchTerm || undefined,
+  archived: sessionStore.showArchivedThreads,
+})
+const threadListRouteKey = computed(() =>
+  JSON.stringify({
+    hostId: sessionStore.selectedHostId,
+    workspaceId: sessionStore.selectedWorkspaceId,
+    searchTerm: sessionStore.threadSearchTerm,
+    archived: sessionStore.showArchivedThreads,
+  }),
+)
+
+watch(
+  () =>
+    sessionStore.threads.map((thread) =>
+      [
+        thread.upstream_thread_id,
+        thread.recency_at,
+        thread.status,
+        thread.turn_runtime?.phase ?? '',
+        thread.turn_runtime?.lease_generation ?? '',
+      ].join(':'),
+    ),
+  () => {
+    threadListAnchor.capture()
+    threadListAnchor.restore()
+  },
+  { flush: 'sync' },
+)
 
 const statusLabel = (status: CodexThreadStatus): string =>
   threadStatusLabels[status]
@@ -242,16 +278,38 @@ const threadRoute = (thread: CodexThread): string =>
   buildCodexTaskRoute(thread.upstream_thread_id, {
     hostId: thread.host_id,
     workspaceId: thread.workspace_id,
+    ...taskRouteFilters(),
   })
 
 const submitSearch = async (): Promise<void> => {
   await sessionStore.setThreadSearchTerm(searchTerm.value)
+  await navigateTo(
+    buildCodexTasksRoute({
+      hostId: sessionStore.selectedHostId ?? undefined,
+      workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
+    }),
+  )
 }
 
 const setArchived = async (archived: boolean): Promise<void> => {
   if (archived === sessionStore.showArchivedThreads) return
   await sessionStore.setArchivedThreadsVisible(archived)
+  await navigateTo(
+    buildCodexTasksRoute({
+      hostId: sessionStore.selectedHostId ?? undefined,
+      workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
+    }),
+  )
 }
+
+watch(
+  () => sessionStore.threadSearchTerm,
+  (value) => {
+    searchTerm.value = value
+  },
+)
 
 const toggleWorkspacePin = async (): Promise<void> => {
   const workspace = sessionStore.selectedWorkspace
@@ -277,4 +335,22 @@ const toggleArchive = async (thread: CodexThread): Promise<void> => {
 }
 
 onBeforeUnmount(closeRename)
+
+onMounted(() => {
+  void nextTick(() => {
+    const container = threadListContainer.value
+    if (!container) return
+    container.scrollTop =
+      uiStore.threadListScrollTopByRouteKey[threadListRouteKey.value] ?? 0
+  })
+})
+
+onBeforeUnmount(() => {
+  if (threadListContainer.value) {
+    uiStore.setThreadListScrollPosition(
+      threadListRouteKey.value,
+      threadListContainer.value.scrollTop,
+    )
+  }
+})
 </script>

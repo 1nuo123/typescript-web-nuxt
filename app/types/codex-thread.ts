@@ -1,5 +1,5 @@
 import type { CodexTimelineItem } from './codex-item'
-import type { CodexTurn } from './codex-turn'
+import type { CodexTurn, CodexTurnRuntime } from './codex-turn'
 import type { CodexApprovalPolicy, CodexSandboxMode } from './codex-host'
 
 export interface CodexExecutionOptions {
@@ -45,6 +45,8 @@ export interface CodexThread {
   reasoning_effort: string | null
   status: CodexThreadStatus
   active_turn_id: string | null
+  /** 服务端权威运行态；无活动 turn 时明确返回 null。 */
+  turn_runtime: CodexTurnRuntime | null
   archived: boolean
   is_pinned: boolean
   source_kind: string | null
@@ -85,5 +87,21 @@ export interface CodexThreadAuthoritySnapshot {
   turns: CodexTurn[]
   items: CodexTimelineItem[]
   history_status: CodexThreadHistoryStatus
-  next_history_cursor: string | null
+  history_before_cursor: string | null
+  history_has_more: boolean
+  history_revision: string | null
+}
+
+/** 按服务端签名边界向前读取的一页历史，不包含线程控制面元数据。 */
+export interface CodexThreadHistoryPage {
+  items: CodexTimelineItem[]
+  before_cursor: string | null
+  has_more: boolean
+  history_revision: string
+}
+
+/** 仅按稳定 item ID 恢复当前标签页已回收正文的权威响应。 */
+export interface CodexThreadHistoryItemReload {
+  items: CodexTimelineItem[]
+  missing_item_ids: string[]
 }

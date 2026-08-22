@@ -246,14 +246,76 @@
 
   .codex-markdown-pre {
     max-width: 100%;
-    white-space: pre-wrap;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .codex-markdown-pre-wrapped {
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
     word-break: break-word;
   }
 
   .codex-markdown-code {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  .codex-markdown-code-highlighted,
+  .codex-markdown-code-streaming {
+    font-family: var(--font-mono);
+  }
+
+  .codex-markdown-highlight-cmnt {
+    color: var(--ui-ink-muted);
+  }
+
+  .codex-markdown-highlight-kwd,
+  .codex-markdown-highlight-type,
+  .codex-markdown-highlight-section {
+    color: var(--ui-warning);
+  }
+
+  .codex-markdown-highlight-str,
+  .codex-markdown-highlight-num,
+  .codex-markdown-highlight-bool {
+    color: var(--ui-danger);
+  }
+
+  .codex-markdown-highlight-func,
+  .codex-markdown-highlight-class,
+  .codex-markdown-highlight-var {
+    color: var(--ui-accent);
+  }
+
+  .codex-markdown-highlight-insert {
+    color: #2f8f5b;
+  }
+
+  .codex-markdown-highlight-deleted,
+  .codex-markdown-highlight-err {
+    color: var(--ui-danger);
+  }
+
+  .codex-markdown-code-block {
+    max-width: 100%;
+  }
+
+  .codex-markdown-code-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
+
+  .codex-markdown-code-action,
+  .codex-markdown-copy-action {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--ui-line);
+    border-radius: 0.25rem;
+    color: var(--ui-ink-muted);
   }
 
   @media (prefers-reduced-motion: reduce) {

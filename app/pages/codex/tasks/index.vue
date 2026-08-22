@@ -66,10 +66,32 @@ const route = useRoute()
 const { isMobile } = useBreakpoints()
 const pageError = ref('')
 
+/** 路由筛选先写入 store，再读取线程，避免历史导航短暂显示旧结果集。 */
+const applyRouteFilters = async (reload: boolean): Promise<void> => {
+  const searchTerm =
+    typeof route.query.search === 'string' ? route.query.search.trim() : ''
+  const showArchived = route.query.archived === 'true'
+  if (
+    searchTerm === sessionStore.threadSearchTerm &&
+    showArchived === sessionStore.showArchivedThreads
+  ) {
+    return
+  }
+  sessionStore.threadSearchTerm = searchTerm
+  sessionStore.showArchivedThreads = showArchived
+  if (reload && sessionStore.selectedHostId) await sessionStore.loadThreads()
+}
+
+watch(
+  [() => route.query.search, () => route.query.archived],
+  () => void applyRouteFilters(true),
+)
+
 onMounted(async () => {
   await nextTick()
   if (isMobile.value) return
   try {
+    await applyRouteFilters(false)
     const hostId =
       typeof route.query.hostId === 'string' ? route.query.hostId : undefined
     const workspaceId =

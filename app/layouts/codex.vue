@@ -35,6 +35,7 @@ const sessionStore = useCodexSessionStore()
 const realtimeStore = useCodexRealtimeStore()
 const approvalsStore = useCodexApprovalsStore()
 const uiStore = useCodexUiStore()
+const experienceFlags = useCodexExperienceFeatureFlags()
 const { status, reconnectAttempt, lastError } = storeToRefs(realtimeStore)
 const { width, isMobile } = useBreakpoints()
 
@@ -84,6 +85,7 @@ watch(
       sessionStore.clearSession()
       realtimeStore.clearRealtime()
       approvalsStore.clear()
+      experienceFlags.reset()
       uiStore.clearUi()
     }
   },

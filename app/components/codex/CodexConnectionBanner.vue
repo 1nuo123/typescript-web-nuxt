@@ -28,6 +28,12 @@ const message = computed(() => {
   if (props.status === CodexRealtimeConnectionStatus.Reconnecting) {
     return `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次）…`
   }
+  if (props.status === CodexRealtimeConnectionStatus.Resyncing) {
+    return '正在同步权威状态，暂时冻结写入。'
+  }
+  if (props.status === CodexRealtimeConnectionStatus.AuthBlocked) {
+    return '登录状态已失效，请重新登录。'
+  }
   return '正在连接本机 Codex…'
 })
 </script>

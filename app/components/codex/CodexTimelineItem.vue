@@ -24,21 +24,56 @@
           class="size-1.5 animate-pulse rounded-full bg-accent"
           aria-label="正在生成"
         />
+        <span
+          v-else-if="failedClientOperationId"
+          class="text-danger"
+          aria-live="polite"
+        >
+          {{ awaitingConfirmation ? '结果确认中' : '发送失败' }}
+        </span>
       </div>
       <div
-        v-if="
+        v-if="item.detail.kind === 'evicted'"
+        class="rounded-md border border-line bg-surface-muted px-3 py-2 text-sm text-ink-muted"
+      >
+        <p class="m-0">较早内容已从当前页面内存回收。</p>
+        <button
+          type="button"
+          class="mt-2 text-xs font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary"
+          @click="$emit('reload', item.header.item_id)"
+        >
+          重新加载
+        </button>
+      </div>
+      <div
+        v-else-if="
           item.detail.kind === CodexTimelineItemKind.UserMessage ||
           item.detail.kind === CodexTimelineItemKind.AgentMessage
         "
         class="codex-markdown break-words text-sm leading-6 text-ink"
       >
-        <CodexMarkdown :source="item.detail.text" />
+        <CodexMarkdown
+          :copyable="item.detail.kind === CodexTimelineItemKind.AgentMessage"
+          :source="item.detail.text"
+          :streaming="item.header.status === CodexTimelineItemStatus.Streaming"
+        />
+        <button
+          v-if="failedClientOperationId"
+          type="button"
+          class="mt-2 text-xs font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary"
+          @click="$emit('retry', failedClientOperationId)"
+        >
+          {{ awaitingConfirmation ? '确认并重试' : '重试发送' }}
+        </button>
       </div>
       <div
         v-else-if="item.detail.kind === CodexTimelineItemKind.Notice"
         class="rounded-md border-l-2 border-line-strong bg-surface-muted px-3 py-2 text-sm text-ink-muted"
       >
-        <CodexMarkdown :source="item.detail.text" />
+        <CodexMarkdown
+          :source="item.detail.text"
+          :streaming="item.header.status === CodexTimelineItemStatus.Streaming"
+        />
       </div>
       <div
         v-else-if="item.detail.kind === CodexTimelineItemKind.ContextCompaction"
@@ -83,14 +118,33 @@ import {
   CodexTimelineItemKind,
   CodexTimelineItemStatus,
   type CodexPlanTimelineItem,
-  type CodexTimelineItem,
+  type CodexTimelineRenderableItem,
 } from '~/types/codex-item'
 import CodexMarkdown from './CodexMarkdown'
 
-const props = defineProps<{ item: CodexTimelineItem }>()
+const props = withDefaults(
+  defineProps<{
+    awaitingConfirmation?: boolean
+    item: CodexTimelineRenderableItem
+  }>(),
+  { awaitingConfirmation: false },
+)
 defineEmits<{
   'open-context': [itemId: string, kind: CodexTimelineItemKind]
+  retry: [clientOperationId: string]
+  reload: [itemId: string]
 }>()
+
+const failedClientOperationId = computed(() => {
+  if (
+    props.item.detail.kind !== CodexTimelineItemKind.UserMessage ||
+    props.item.header.status !== CodexTimelineItemStatus.Failed ||
+    !props.item.header.item_id.startsWith('local-')
+  ) {
+    return null
+  }
+  return props.item.header.item_id.slice('local-'.length)
+})
 
 const contentClass = computed(() => {
   if (props.item.detail.kind === CodexTimelineItemKind.UserMessage) {
@@ -109,6 +163,7 @@ const contentClass = computed(() => {
 const planItem = computed(() => props.item as CodexPlanTimelineItem)
 
 const itemIcon = computed(() => {
+  if (props.item.detail.kind === 'evicted') return Info
   const icons = {
     [CodexTimelineItemKind.AgentMessage]: Bot,
     [CodexTimelineItemKind.Plan]: ListChecks,
@@ -123,6 +178,7 @@ const itemIcon = computed(() => {
 })
 
 const itemLabel = computed(() => {
+  if (props.item.detail.kind === 'evicted') return '已回收内容'
   const labels: Record<CodexTimelineItemKind, string> = {
     [CodexTimelineItemKind.UserMessage]: '你',
     [CodexTimelineItemKind.AgentMessage]: 'Codex',

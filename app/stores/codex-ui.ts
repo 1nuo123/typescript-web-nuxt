@@ -13,6 +13,7 @@ interface CodexUiStoreState {
   mobilePanelOpen: boolean
   timelineFollowByThreadId: Record<string, boolean>
   timelineScrollTopByThreadId: Record<string, number>
+  threadListScrollTopByRouteKey: Record<string, number>
   contextPanelOpen: boolean
   contextView: CodexContextView
   selectedContextItemId: string | null
@@ -24,6 +25,7 @@ export const useCodexUiStore = defineStore('codex-ui', {
     mobilePanelOpen: false,
     timelineFollowByThreadId: {},
     timelineScrollTopByThreadId: {},
+    threadListScrollTopByRouteKey: {},
     contextPanelOpen: false,
     contextView: CodexContextView.Changes,
     selectedContextItemId: null,
@@ -50,6 +52,10 @@ export const useCodexUiStore = defineStore('codex-ui', {
     ): void {
       this.timelineFollowByThreadId[threadId] = follow
       this.timelineScrollTopByThreadId[threadId] = scrollTop
+    },
+    /** 列表位置仅保留在内存，避免把阅读行为和会话正文写入持久化浏览器存储。 */
+    setThreadListScrollPosition(routeKey: string, scrollTop: number): void {
+      this.threadListScrollTopByRouteKey[routeKey] = Math.max(0, scrollTop)
     },
     openContext(
       view: CodexContextView,

@@ -3,6 +3,7 @@ import {
   BACKEND_PROXY_COOKIE_PATH_REWRITE,
   PUBLIC_BROWSER_AUTH_COOKIE_PATH,
   buildBackendProxyTarget,
+  resolveBackendProxyForwarding,
   stripBackendProxyPrefix,
   shouldProxyBackendPath,
 } from '../../server/utils/backend-proxy'
@@ -50,5 +51,72 @@ describe('backend proxy routing', () => {
     expect(() =>
       buildBackendProxyTarget('file:///tmp/api', '/auth/me'),
     ).toThrow('HTTP or HTTPS')
+  })
+
+  it('preserves an exact HTTPS forwarding declaration from the public proxy', () => {
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('http://frontend:3000/api/auth/browser/token'),
+        'https',
+        '443',
+      ),
+    ).toEqual({ protocol: 'https', port: '443' })
+  })
+
+  it('accepts only legal decimal forwarding ports', () => {
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('http://frontend:3000/api/auth/browser/token'),
+        'https',
+        '8443',
+      ),
+    ).toEqual({ protocol: 'https', port: '8443' })
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('http://frontend:3000/api/auth/browser/token'),
+        'https',
+        '443,80',
+      ),
+    ).toEqual({ protocol: 'https', port: '443' })
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('http://frontend:3000/api/auth/browser/token'),
+        'https',
+        '0',
+      ),
+    ).toEqual({ protocol: 'https', port: '443' })
+  })
+
+  it('ignores spoofed or multi-value protocols and falls back to the internal request', () => {
+    const requestURL = new URL('http://frontend:3000/api/auth/browser/token')
+
+    expect(resolveBackendProxyForwarding(requestURL, 'HTTP', '443')).toEqual({
+      protocol: 'http',
+      port: '3000',
+    })
+    expect(
+      resolveBackendProxyForwarding(requestURL, 'https,http', '443'),
+    ).toEqual({ protocol: 'http', port: '3000' })
+    expect(resolveBackendProxyForwarding(requestURL)).toEqual({
+      protocol: 'http',
+      port: '3000',
+    })
+  })
+
+  it('uses standard ports when the internal request has no explicit port', () => {
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('http://frontend/api/auth/browser/token'),
+        'http',
+        '80',
+      ),
+    ).toEqual({ protocol: 'http', port: '80' })
+    expect(
+      resolveBackendProxyForwarding(
+        new URL('https://frontend/api/auth/browser/token'),
+        'invalid',
+        '443',
+      ),
+    ).toEqual({ protocol: 'https', port: '443' })
   })
 })

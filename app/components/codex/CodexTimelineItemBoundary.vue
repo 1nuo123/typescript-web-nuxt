@@ -1,8 +1,11 @@
 <template>
   <NuxtErrorBoundary @error="captureError">
     <CodexTimelineItem
+      :awaiting-confirmation="awaitingConfirmation"
       :item="item"
       @open-context="(itemId, kind) => $emit('open-context', itemId, kind)"
+      @retry="(clientOperationId) => $emit('retry', clientOperationId)"
+      @reload="(itemId) => $emit('reload', itemId)"
     />
     <template #error="{ clearError }">
       <article
@@ -24,12 +27,21 @@
 import type {
   CodexTimelineItem,
   CodexTimelineItemKind,
+  CodexTimelineRenderableItem,
 } from '~/types/codex-item'
 import { RuntimeLogSource } from '~/types/app'
 
-const props = defineProps<{ item: CodexTimelineItem }>()
+withDefaults(
+  defineProps<{
+    awaitingConfirmation?: boolean
+    item: CodexTimelineRenderableItem
+  }>(),
+  { awaitingConfirmation: false },
+)
 defineEmits<{
   'open-context': [itemId: string, kind: CodexTimelineItemKind]
+  retry: [clientOperationId: string]
+  reload: [itemId: string]
 }>()
 const logger = useClientLogger()
 
@@ -37,10 +49,6 @@ const captureError = (error: unknown): void => {
   logger.capture(error, {
     source: RuntimeLogSource.Vue,
     code: 'codex.timeline.item_render_failed',
-    threadId: props.item.header.thread_id,
-    turnId: props.item.header.turn_id ?? undefined,
-    itemId: props.item.header.item_id,
-    eventType: props.item.detail.kind,
   })
 }
 </script>

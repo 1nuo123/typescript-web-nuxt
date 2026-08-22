@@ -11,12 +11,21 @@ import {
   type CodexRealtimeEvent,
 } from '~/types/codex-realtime'
 import { normalizeCodexApproval } from '~/utils/codex-contract-normalizer'
+import { getCodexRealtimeWriteBlockReason } from '~/utils/codex-realtime-write-guard'
+
+const STEP_UP_REQUIRED_DECISIONS = new Set<CodexApprovalDecision>([
+  CodexApprovalDecision.Accept,
+  CodexApprovalDecision.AcceptForSession,
+  CodexApprovalDecision.AcceptWithExecpolicyAmendment,
+  CodexApprovalDecision.ApplyNetworkPolicyAmendment,
+])
 
 interface CodexApprovalStateModel {
   approvalsById: Record<string, CodexApproval>
   loading: boolean
   decisionStateById: Record<string, CodexApprovalDecisionState>
   decisionErrorById: Record<string, string>
+  lastResolvedApproval: CodexApproval | null
 }
 
 let approvalsLoadInFlight: Promise<void> | null = null
@@ -42,6 +51,7 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
     loading: false,
     decisionStateById: {},
     decisionErrorById: {},
+    lastResolvedApproval: null,
   }),
   getters: {
     pending(state): CodexApproval[] {
@@ -102,9 +112,14 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
       decision: CodexApprovalDecision,
       stepUpToken?: string,
     ): Promise<void> {
+      const blockReason = getCodexRealtimeWriteBlockReason(
+        useCodexRealtimeStore().status,
+        'approval',
+      )
+      if (blockReason) throw new Error(blockReason)
       if (
         approval.risk_level === CodexApprovalRiskLevel.High &&
-        decision === CodexApprovalDecision.Accept &&
+        STEP_UP_REQUIRED_DECISIONS.has(decision) &&
         !stepUpToken
       ) {
         throw new Error('高风险审批需要增强验证。')
@@ -152,8 +167,11 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
         return
       }
       const approval = normalizeCodexApproval(event.detail.approval)
+      const existing = this.approvalsById[approval.approval_id]
+      if (existing && compareApprovalRecency(approval, existing) < 0) return
       this.upsert(approval)
       if (event.detail.kind === CodexRealtimeEventType.ApprovalResolved) {
+        this.lastResolvedApproval = approval
         this.decisionStateById[approval.approval_id] =
           CodexApprovalDecisionState.Acknowledged
       }

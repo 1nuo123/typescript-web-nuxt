@@ -5,12 +5,13 @@ import type {
   CodexTimelineItem,
 } from './codex-item'
 import type { CodexThread, CodexThreadHistoryStatus } from './codex-thread'
-import type { CodexTurn } from './codex-turn'
+import type { CodexTurn, CodexTurnRuntime } from './codex-turn'
 import type { CodexWorkspace } from './codex-workspace'
 import type { CodexApproval } from './codex-approval'
 
 export const CODEX_REALTIME_SCHEMA_VERSION = '2.0'
 export const CODEX_REALTIME_STREAM_EPOCH = 'codex-browser-stream-v2'
+export const CODEX_REALTIME_BATCH_PROTOCOL_VERSION = 2
 
 export enum CodexRealtimeEventType {
   ConnectionReady = 'connection.ready',
@@ -87,8 +88,9 @@ export interface CodexThreadSnapshotDetail extends CodexRealtimeDetailBase {
   turns: CodexTurn[]
   items: CodexTimelineItem[]
   history_status: CodexThreadHistoryStatus
-  next_history_cursor?: string | null
-  append_history?: boolean
+  history_before_cursor: string | null
+  history_has_more: boolean
+  history_revision: string | null
 }
 
 export interface CodexThreadUpdatedDetail extends CodexRealtimeDetailBase {
@@ -208,6 +210,8 @@ export enum CodexRealtimeConnectionStatus {
   Connecting = 'connecting',
   Connected = 'connected',
   Reconnecting = 'reconnecting',
+  Resyncing = 'resyncing',
+  AuthBlocked = 'auth_blocked',
   Offline = 'offline',
   Incompatible = 'incompatible',
   Error = 'error',
@@ -223,4 +227,25 @@ export enum CodexRealtimeApplyResult {
 export interface CodexRealtimeTicket {
   ticket: string
   expires_at?: string
+}
+
+/** 跨网络边界的有序事件批次；同一批只允许一个 stream epoch。 */
+export interface CodexRealtimeBatch {
+  protocol_version: typeof CODEX_REALTIME_BATCH_PROTOCOL_VERSION
+  stream_epoch: string
+  first_cursor: string | null
+  last_cursor: string | null
+  barrier: boolean
+  events: CodexRealtimeEvent[]
+}
+
+/** 权威恢复快照，应用后只能重放 snapshot_cursor 之后的事件。 */
+export interface CodexAuthoritySnapshot {
+  stream_epoch: string
+  snapshot_cursor: string
+  projection_revision: string
+  thread: CodexThread
+  timeline_items: CodexTimelineItem[]
+  turns: CodexTurnRuntime[]
+  approvals: CodexApproval[]
 }

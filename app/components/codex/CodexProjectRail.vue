@@ -168,6 +168,11 @@ const approvalsStore = useCodexApprovalsStore()
 const authStore = useAuthStore()
 const creating = ref(false)
 
+const taskRouteFilters = () => ({
+  searchTerm: sessionStore.threadSearchTerm || undefined,
+  archived: sessionStore.showArchivedThreads,
+})
+
 const enabledWorkspaces = computed(() =>
   sessionStore.workspaces.filter((workspace) => workspace.enabled),
 )
@@ -188,6 +193,7 @@ const selectHost = async (event: Event): Promise<void> => {
     buildCodexTasksRoute({
       hostId,
       workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
     }),
   )
 }
@@ -199,6 +205,7 @@ const selectWorkspace = async (workspaceId: string): Promise<void> => {
     buildCodexTasksRoute({
       hostId: sessionStore.selectedHostId ?? undefined,
       workspaceId,
+      ...taskRouteFilters(),
     }),
   )
 }
@@ -217,6 +224,7 @@ const createConversation = async (): Promise<void> => {
       buildCodexTaskRoute(created.upstream_thread_id, {
         hostId: created.host_id,
         workspaceId: created.workspace_id,
+        ...taskRouteFilters(),
       }),
     )
   } finally {
@@ -232,6 +240,7 @@ const openSearch = async (): Promise<void> => {
     buildCodexTasksRoute({
       hostId: sessionStore.selectedHostId ?? undefined,
       workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
     }),
   )
 }
@@ -244,6 +253,7 @@ const openArchive = async (): Promise<void> => {
     buildCodexTasksRoute({
       hostId: sessionStore.selectedHostId ?? undefined,
       workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
     }),
   )
 }

@@ -38,6 +38,16 @@
       />
     </button>
 
+    <NuxtLink
+      v-if="canOperate && sessionStore.selectedWorkspaceId"
+      :to="executionSettingsRoute"
+      class="grid size-8 shrink-0 place-items-center rounded-md text-ink-muted no-underline hover:bg-surface-muted hover:text-ink"
+      title="运行设置"
+      aria-label="运行设置"
+    >
+      <Settings2 class="size-4" aria-hidden="true" />
+    </NuxtLink>
+
     <CodexTurnActions
       :active="activeTurn && canOperate"
       :interrupting="interrupting"
@@ -113,9 +123,13 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Settings2,
 } from '@lucide/vue'
 import { CodexThreadStatus } from '~/types/codex-thread'
-import { buildCodexTasksRoute } from '~/types/routes'
+import {
+  buildCodexExecutionSettingsRoute,
+  buildCodexTasksRoute,
+} from '~/types/routes'
 import { CodexContextView } from '~/stores/codex-ui'
 
 defineProps<{
@@ -126,19 +140,25 @@ defineProps<{
   canOperate: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   interrupt: []
   compact: []
+  'open-context': [view: CodexContextView, selectedItemId?: string]
 }>()
 
 const sessionStore = useCodexSessionStore()
 const approvalStore = useCodexApprovalsStore()
-const uiStore = useCodexUiStore()
 const thread = computed(() => sessionStore.selectedThread)
 const renameOpen = ref(false)
 
 const tasksRoute = computed(() =>
   buildCodexTasksRoute({
+    hostId: sessionStore.selectedHostId ?? undefined,
+    workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+  }),
+)
+const executionSettingsRoute = computed(() =>
+  buildCodexExecutionSettingsRoute({
     hostId: sessionStore.selectedHostId ?? undefined,
     workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
   }),
@@ -169,7 +189,7 @@ const openContext = (): void => {
   const view = pendingCount.value
     ? CodexContextView.Approvals
     : CodexContextView.Changes
-  uiStore.openContext(view)
+  emit('open-context', view)
 }
 
 const beginRename = (): void => {

@@ -14,6 +14,7 @@ import {
   CodexThreadTitleSource,
   type CodexThread,
 } from '../../app/types/codex-thread'
+import { CodexTurnPhase } from '../../app/types/codex-turn'
 import {
   CODEX_REALTIME_SCHEMA_VERSION,
   CODEX_REALTIME_STREAM_EPOCH,
@@ -22,8 +23,13 @@ import {
 } from '../../app/types/codex-realtime'
 import {
   createCodexSessionProjection,
+  CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES,
+  evictCodexTimelineBodies,
+  prependCodexHistoryPage,
+  reduceCodexRealtimeBatch,
   reduceCodexRealtimeEvent,
   replaceCodexThreadsForQuery,
+  restoreCodexTimelineBodies,
 } from '../../app/utils/codex-event-reducer'
 import {
   CODEX_CONTENT_TRUNCATED_NOTICE,
@@ -36,6 +42,7 @@ import {
 
 const INCOMPATIBLE_CODEX_REALTIME_SCHEMA_VERSION = '1.0'
 const THREAD_TIMESTAMP = '2026-08-01T00:00:00Z'
+const HISTORY_REVISION = 'a'.repeat(64)
 
 const event = <TType extends CodexRealtimeEventType>(
   type: TType,
@@ -78,6 +85,7 @@ const thread = (overrides: Partial<CodexThread> = {}): CodexThread => ({
   reasoning_effort: 'high',
   status: CodexThreadStatus.Idle,
   active_turn_id: null,
+  turn_runtime: null,
   archived: false,
   is_pinned: false,
   source_kind: 'app_server',
@@ -214,7 +222,129 @@ describe('Codex event reducer', () => {
     expect(finalState.orderedItemIdsByThread['thread-1']).toEqual(['item-1'])
   })
 
-  it('replaces the matching optimistic user item with the server upsert', () => {
+  it('projects one realtime batch exactly like the same events applied sequentially', () => {
+    const events = [
+      event(CodexRealtimeEventType.ItemDelta, {
+        item_id: 'item-batch',
+        thread_id: 'thread-1',
+        turn_id: 'turn-1',
+        delta: '第一段',
+      }),
+      event(
+        CodexRealtimeEventType.ItemDelta,
+        {
+          item_id: 'item-batch',
+          thread_id: 'thread-1',
+          turn_id: 'turn-1',
+          delta: '第二段',
+        },
+        1,
+      ),
+      event(
+        CodexRealtimeEventType.ItemUpsert,
+        {
+          item: messageItem(
+            'item-batch',
+            CodexTimelineItemKind.AgentMessage,
+            '第一段第二段。',
+          ),
+        },
+        2,
+      ),
+    ]
+
+    const sequential = events.reduce(
+      (projection, event) => reduceCodexRealtimeEvent(projection, event),
+      createCodexSessionProjection(),
+    )
+    const batched = reduceCodexRealtimeBatch(
+      createCodexSessionProjection(),
+      events,
+    )
+
+    expect(batched).toEqual(sequential)
+    expect(batched.itemsById['item-batch']?.detail).toMatchObject({
+      text: '第一段第二段。',
+    })
+  })
+
+  it('updates one cached timeline item without rebuilding unrelated item references', () => {
+    const initial = reduceCodexRealtimeBatch(createCodexSessionProjection(), [
+      event(CodexRealtimeEventType.ItemUpsert, {
+        item: messageItem(
+          'item-1',
+          CodexTimelineItemKind.AgentMessage,
+          '第一项',
+        ),
+      }),
+      event(
+        CodexRealtimeEventType.ItemUpsert,
+        {
+          item: messageItem(
+            'item-2',
+            CodexTimelineItemKind.AgentMessage,
+            '第二项',
+          ),
+        },
+        1,
+      ),
+    ])
+    const previousTimeline = initial.timelineItemsByThread['thread-1']!
+    const previousSecond = previousTimeline[1]
+
+    const updated = reduceCodexRealtimeEvent(
+      initial,
+      event(
+        CodexRealtimeEventType.ItemDelta,
+        {
+          item_id: 'item-1',
+          thread_id: 'thread-1',
+          turn_id: 'turn-1',
+          delta: '追加',
+        },
+        2,
+      ),
+    )
+    const nextTimeline = updated.timelineItemsByThread['thread-1']!
+
+    expect(Object.isFrozen(previousTimeline)).toBe(true)
+    expect(nextTimeline).not.toBe(previousTimeline)
+    expect(nextTimeline[0]).not.toBe(previousTimeline[0])
+    expect(nextTimeline[1]).toBe(previousSecond)
+    expect(updated.orderedItemIdsByThread['thread-1']).toBe(
+      initial.orderedItemIdsByThread['thread-1'],
+    )
+    expect(nextTimeline.map((item) => item.header.item_id)).toEqual([
+      'item-1',
+      'item-2',
+    ])
+  })
+
+  it('keeps a high-frequency delta batch equivalent to individual projections', () => {
+    const events = Array.from({ length: 64 }, (_, sequence) =>
+      event(
+        CodexRealtimeEventType.ItemDelta,
+        {
+          item_id: 'item-streaming',
+          thread_id: 'thread-1',
+          turn_id: 'turn-1',
+          delta: String(sequence),
+        },
+        sequence,
+      ),
+    )
+    const sequential = events.reduce(
+      (projection, currentEvent) =>
+        reduceCodexRealtimeEvent(projection, currentEvent),
+      createCodexSessionProjection(),
+    )
+
+    expect(
+      reduceCodexRealtimeBatch(createCodexSessionProjection(), events),
+    ).toEqual(sequential)
+  })
+
+  it('does not reconcile identical user messages by their body text', () => {
     const initial = createCodexSessionProjection()
     initial.itemsById['local-1'] = messageItem(
       'local-1',
@@ -234,8 +364,47 @@ describe('Codex event reducer', () => {
       }),
     )
 
-    expect(reconciled.itemsById['local-1']).toBeUndefined()
-    expect(reconciled.orderedItemIdsByThread['thread-1']).toEqual(['server-1'])
+    expect(reconciled.itemsById['local-1']).toBeDefined()
+    expect(reconciled.itemsById['server-1']).toBeDefined()
+    expect(reconciled.orderedItemIdsByThread['thread-1']).toEqual([
+      'local-1',
+      'server-1',
+    ])
+  })
+
+  it('reconciles an optimistic user message only by client operation ID', () => {
+    const clientOperationId = '11111111-1111-4111-8111-111111111111'
+    const initial = createCodexSessionProjection()
+    const optimisticItem = messageItem(
+      `local-${clientOperationId}`,
+      CodexTimelineItemKind.UserMessage,
+      'same message body',
+    )
+    optimisticItem.header.client_operation_id = clientOperationId
+    initial.itemsById[optimisticItem.header.item_id] = optimisticItem
+    initial.itemSourceById[optimisticItem.header.item_id] =
+      CodexTimelineItemSource.Optimistic
+    initial.orderedItemIdsByThread['thread-1'] = [optimisticItem.header.item_id]
+
+    const authoritativeItem = messageItem(
+      'server-user-1',
+      CodexTimelineItemKind.UserMessage,
+      'same message body',
+    )
+    authoritativeItem.header.client_operation_id = clientOperationId
+    const reconciled = reduceCodexRealtimeEvent(
+      initial,
+      event(CodexRealtimeEventType.ItemUpsert, { item: authoritativeItem }),
+    )
+
+    expect(reconciled.itemsById[optimisticItem.header.item_id]).toBeUndefined()
+    expect(reconciled.itemsById['server-user-1']).toBeDefined()
+    expect(reconciled.itemSourceById['server-user-1']).toBe(
+      CodexTimelineItemSource.Realtime,
+    )
+    expect(reconciled.orderedItemIdsByThread['thread-1']).toEqual([
+      'server-user-1',
+    ])
   })
 
   it('merges complete authority history without deleting confirmed realtime output', () => {
@@ -271,15 +440,18 @@ describe('Codex event reducer', () => {
           ),
         ],
         history_status: CodexThreadHistoryStatus.Complete,
-        next_history_cursor: null,
+        history_before_cursor: null,
+        history_has_more: false,
+        history_revision: HISTORY_REVISION,
       }),
     )
 
-    expect(restored.itemsById['local-optimistic']).toBeUndefined()
+    expect(restored.itemsById['local-optimistic']).toBeDefined()
     expect(restored.itemsById['command-realtime']?.detail).toMatchObject({
       output: 'APPROVAL_TEST',
     })
     expect(restored.orderedItemIdsByThread['thread-1']).toEqual([
+      'local-optimistic',
       'command-realtime',
       'server-1',
     ])
@@ -291,7 +463,9 @@ describe('Codex event reducer', () => {
         turns: [],
         items: [],
         history_status: CodexThreadHistoryStatus.OmittedTooLarge,
-        next_history_cursor: null,
+        history_before_cursor: null,
+        history_has_more: false,
+        history_revision: null,
       }),
     )
 
@@ -300,6 +474,42 @@ describe('Codex event reducer', () => {
     expect(omitted.historyStatusByThread['thread-1']).toBe(
       CodexThreadHistoryStatus.OmittedTooLarge,
     )
+  })
+
+  it('prepends an older history page without duplicating boundary items', () => {
+    const initial = createCodexSessionProjection()
+    initial.itemsById['latest'] = messageItem(
+      'latest',
+      CodexTimelineItemKind.AgentMessage,
+      '最新回复',
+    )
+    initial.orderedItemIdsByThread['thread-1'] = ['latest']
+
+    const prepended = prependCodexHistoryPage(initial, 'thread-1', {
+      items: [
+        messageItem('older-1', CodexTimelineItemKind.UserMessage, '更早问题'),
+        messageItem('older-2', CodexTimelineItemKind.AgentMessage, '更早回复'),
+      ],
+      before_cursor: 'signed-before-cursor',
+      has_more: true,
+      history_revision: HISTORY_REVISION,
+    })
+
+    const deduplicated = prependCodexHistoryPage(prepended, 'thread-1', {
+      items: [
+        messageItem('older-2', CodexTimelineItemKind.AgentMessage, '更早回复'),
+      ],
+      before_cursor: null,
+      has_more: false,
+      history_revision: HISTORY_REVISION,
+    })
+
+    expect(deduplicated.orderedItemIdsByThread['thread-1']).toEqual([
+      'older-1',
+      'older-2',
+      'latest',
+    ])
+    expect(deduplicated.historyCursorByThread['thread-1']).toBeNull()
   })
 
   it('creates plan and structured diff timeline items from stable product events', () => {
@@ -482,6 +692,41 @@ describe('Codex event reducer', () => {
     })
   })
 
+  it('preserves authoritative turn runtime from a thread update patch', () => {
+    const initial = createCodexSessionProjection()
+    initial.threadsById['thread-1'] = thread()
+
+    const updated = reduceCodexRealtimeEvent(
+      initial,
+      event(CodexRealtimeEventType.ThreadUpdated, {
+        thread: {
+          host_id: 'host-1',
+          workspace_id: 'workspace-1',
+          upstream_thread_id: 'thread-1',
+          turn_runtime: {
+            turn_id: 'turn-1',
+            thread_id: 'thread-1',
+            phase: CodexTurnPhase.Running,
+            last_activity_at: '2026-08-01T00:02:00Z',
+            stalled_reason: null,
+            lease_generation: 4,
+            lease_expires_at: '2026-08-01T00:03:00Z',
+          },
+        },
+      }),
+    )
+
+    expect(updated.threadsById['thread-1']?.turn_runtime).toEqual({
+      turn_id: 'turn-1',
+      thread_id: 'thread-1',
+      phase: CodexTurnPhase.Running,
+      last_activity_at: '2026-08-01T00:02:00Z',
+      stalled_reason: null,
+      lease_generation: 4,
+      lease_expires_at: '2026-08-01T00:03:00Z',
+    })
+  })
+
   it('keeps recency monotonic across duplicate events and scoped list refreshes', () => {
     const initial = createCodexSessionProjection()
     initial.threadsById['thread-1'] = thread({
@@ -565,5 +810,67 @@ describe('Codex event reducer', () => {
 
     expect(text.length).toBeLessThanOrEqual(CODEX_TIMELINE_TEXT_LIMIT)
     expect(text).toContain(CODEX_CONTENT_TRUNCATED_NOTICE.trim())
+  })
+
+  it('history_virtual_eviction_can_reload_item', () => {
+    const initial = createCodexSessionProjection()
+    const retainedItemIds = Array.from(
+      { length: 24 },
+      (_, index) => `history-${index}`,
+    )
+    for (const itemId of retainedItemIds) {
+      initial.itemsById[itemId] = messageItem(
+        itemId,
+        CodexTimelineItemKind.AgentMessage,
+        'x'.repeat(1024 * 1024),
+      )
+    }
+    initial.orderedItemIdsByThread['thread-1'] = retainedItemIds
+
+    const evicted = evictCodexTimelineBodies(
+      initial,
+      'thread-1',
+      new Set(['history-0']),
+    )
+
+    expect(evicted.itemsById['history-0']?.detail.kind).toBe(
+      CodexTimelineItemKind.AgentMessage,
+    )
+    expect(evicted.itemsById['history-1']?.detail).toMatchObject({
+      kind: 'evicted',
+      original_kind: CodexTimelineItemKind.AgentMessage,
+    })
+    expect(evicted.orderedItemIdsByThread['thread-1']).toEqual(retainedItemIds)
+    const retainedBytes = retainedItemIds.reduce((total, itemId) => {
+      const item = evicted.itemsById[itemId]
+      return (
+        total +
+        (item
+          ? new TextEncoder().encode(JSON.stringify(item.detail)).byteLength
+          : 0)
+      )
+    }, 0)
+    expect(retainedBytes).toBeLessThanOrEqual(
+      CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES,
+    )
+
+    const restored = restoreCodexTimelineBodies(evicted, [
+      messageItem(
+        'history-1',
+        CodexTimelineItemKind.AgentMessage,
+        '重新读取的权威内容',
+      ),
+      messageItem(
+        'unknown-item',
+        CodexTimelineItemKind.AgentMessage,
+        '不得借恢复路径新增条目',
+      ),
+    ])
+
+    expect(restored.itemsById['history-1']?.detail).toMatchObject({
+      kind: CodexTimelineItemKind.AgentMessage,
+      text: '重新读取的权威内容',
+    })
+    expect(restored.itemsById['unknown-item']).toBeUndefined()
   })
 })

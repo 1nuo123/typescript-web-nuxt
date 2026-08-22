@@ -94,7 +94,7 @@ endpoint 未启用时必须保持功能开关关闭。
 
 Production should place Nuxt and FastAPI behind one HTTPS gateway origin. The backend browser login/refresh endpoints keep the refresh token in a Secure, httpOnly, SameSite cookie; Nuxt stores only the short-lived access token in memory and never reads the refresh token. Use a single public REST namespace such as `NUXT_PUBLIC_API_BASE_URL=/api` so browser cookie paths match the request path; production WSS should be derived from or proxied at the same HTTPS gateway.
 
-For the temporary `http://47.113.177.140` server acceptance environment, clone
+For the temporary `http://39.96.201.189` server acceptance environment, clone
 this repository beside `python-web-fastapi` and run the backend repository's
 `bash deploy/production.sh bootstrap` command. It generates this repository's
 untracked `.env.production.local` and attaches Nuxt to

@@ -7,6 +7,72 @@ export const BACKEND_PROXY_COOKIE_PATH_REWRITE = {
 
 const SUPPORTED_BACKEND_PROTOCOLS = new Set(['http:', 'https:'])
 
+type BackendProxyProtocol = 'http' | 'https'
+
+/**
+ * 反向代理转发给后端的公共传输元数据。
+ *
+ * 该类型只描述经过校验后的协议和端口，避免把任意入站请求头直接
+ * 复制到后端，从而保证 Secure Cookie 等安全行为只由可信的 HTTPS
+ * 边界驱动。
+ */
+export type BackendProxyForwarding = Readonly<{
+  protocol: BackendProxyProtocol
+  port: string
+}>
+
+const isLegalForwardedPort = (value: string | undefined): value is string => {
+  if (!value || !/^[0-9]{1,5}$/.test(value)) {
+    return false
+  }
+
+  const port = Number(value)
+  return port >= 1 && port <= 65535
+}
+
+const resolveRequestProtocol = (requestURL: URL): BackendProxyProtocol =>
+  requestURL.protocol === 'https:' ? 'https' : 'http'
+
+const resolveDefaultForwardedPort = (
+  requestURL: URL,
+  protocol: BackendProxyProtocol,
+): string => {
+  if (isLegalForwardedPort(requestURL.port)) {
+    return requestURL.port
+  }
+
+  return protocol === 'https' ? '443' : '80'
+}
+
+/**
+ * 严格解析入站的公共协议头。
+ *
+ * 只有值精确等于 `https` 时才接受反向代理的 HTTPS 声明；多值、大小写
+ * 变体或其它协议均回退到 Nuxt 看到的内部请求协议。端口同样只接受
+ * 十进制 1-65535，非法值在 HTTPS 下回退到标准端口 443。
+ */
+export const resolveBackendProxyForwarding = (
+  requestURL: URL,
+  inboundForwardedProto?: string,
+  inboundForwardedPort?: string,
+): BackendProxyForwarding => {
+  const requestProtocol = resolveRequestProtocol(requestURL)
+
+  if (inboundForwardedProto !== 'https') {
+    return {
+      protocol: requestProtocol,
+      port: resolveDefaultForwardedPort(requestURL, requestProtocol),
+    }
+  }
+
+  return {
+    protocol: 'https',
+    port: isLegalForwardedPort(inboundForwardedPort)
+      ? inboundForwardedPort
+      : '443',
+  }
+}
+
 export const shouldProxyBackendPath = (pathname: string): boolean =>
   pathname === BACKEND_PROXY_PATH_PREFIX ||
   pathname.startsWith(`${BACKEND_PROXY_PATH_PREFIX}/`)

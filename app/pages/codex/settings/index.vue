@@ -142,6 +142,23 @@
       </div>
     </section>
 
+    <section class="grid gap-3 border-t border-line pt-6">
+      <h2 class="m-0 text-base font-semibold">通知</h2>
+      <div
+        class="flex items-center justify-between gap-4 border border-line bg-surface px-4 py-3.5"
+      >
+        <span class="text-sm text-ink-muted">系统通知</span>
+        <BaseButton
+          size="sm"
+          variant="secondary"
+          :disabled="notificationPermission !== 'default'"
+          @click="requestNotificationPermission"
+        >
+          {{ notificationPermissionLabel }}
+        </BaseButton>
+      </div>
+    </section>
+
     <BaseModal
       :open="dialogMode === DialogMode.Add"
       title="使用用户代码连接"
@@ -245,6 +262,11 @@ import {
 } from '~/types/codex-host'
 import { CodexRealtimeConnectionStatus } from '~/types/codex-realtime'
 import { LOGIN_ROUTE } from '~/types/routes'
+import {
+  readCodexBrowserNotificationPermission,
+  requestCodexBrowserNotificationPermission,
+  type CodexBrowserNotificationPermission,
+} from '~/utils/codex-browser-notification'
 
 enum DialogMode {
   Closed = 'closed',
@@ -274,6 +296,9 @@ const renameError = ref('')
 const dialogSubmitting = ref(false)
 const connecting = ref(false)
 const connectError = ref('')
+const notificationPermission = ref<CodexBrowserNotificationPermission>(
+  readCodexBrowserNotificationPermission(),
+)
 const URI_HANDLER_NAVIGATION_DELAY_MS = 1_200
 let navigationTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -283,12 +308,24 @@ const activeHostCount = computed(
       .length,
 )
 
+const notificationPermissionLabel = computed(() => {
+  const labels: Readonly<Record<CodexBrowserNotificationPermission, string>> = {
+    default: '开启通知',
+    granted: '通知已开启',
+    denied: '通知已拒绝',
+    unsupported: '当前浏览器不支持',
+  }
+  return labels[notificationPermission.value]
+})
+
 const realtimeStatusLabel = computed(() => {
   const labels: Record<CodexRealtimeConnectionStatus, string> = {
     [CodexRealtimeConnectionStatus.Idle]: '待连接',
     [CodexRealtimeConnectionStatus.Connecting]: '连接中',
     [CodexRealtimeConnectionStatus.Connected]: '已连接',
     [CodexRealtimeConnectionStatus.Reconnecting]: '重连中',
+    [CodexRealtimeConnectionStatus.Resyncing]: '同步中',
+    [CodexRealtimeConnectionStatus.AuthBlocked]: '需要重新登录',
     [CodexRealtimeConnectionStatus.Offline]: '已离线',
     [CodexRealtimeConnectionStatus.Incompatible]: '协议不兼容',
     [CodexRealtimeConnectionStatus.Error]: '连接错误',
@@ -335,6 +372,11 @@ const compatibilityTone = (
 const openAddDialog = () => {
   userCode.value = ''
   dialogMode.value = DialogMode.Add
+}
+
+const requestNotificationPermission = async (): Promise<void> => {
+  notificationPermission.value =
+    await requestCodexBrowserNotificationPermission()
 }
 
 const connectComputer = async (): Promise<void> => {

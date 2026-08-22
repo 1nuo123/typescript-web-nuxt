@@ -14,64 +14,8 @@
         :can-operate="canOperate"
         @interrupt="interrupt"
         @compact="compact"
+        @open-context="openConversationContext"
       />
-      <div
-        v-if="hasExecutionOptions"
-        class="border-b border-line px-3 py-1.5 sm:px-4"
-      >
-        <details>
-          <summary
-            class="flex min-h-8 cursor-pointer list-none items-center gap-2 text-xs text-ink-muted"
-          >
-            <SlidersHorizontal class="size-3.5" aria-hidden="true" />
-            运行配置
-          </summary>
-          <div
-            class="grid grid-cols-1 gap-2 pb-2 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            <BaseSelect
-              v-if="modelOptions.length"
-              :model-value="sessionStore.executionOptions.model || ''"
-              label="模型"
-              :options="modelOptions"
-              @update:model-value="
-                sessionStore.executionOptions.model = $event || null
-              "
-            />
-            <BaseSelect
-              v-if="reasoningOptions.length"
-              :model-value="
-                sessionStore.executionOptions.reasoning_effort || ''
-              "
-              label="推理强度"
-              :options="reasoningOptions"
-              @update:model-value="
-                sessionStore.executionOptions.reasoning_effort = $event || null
-              "
-            />
-            <BaseSelect
-              v-if="sandboxOptions.length > 1"
-              :model-value="sessionStore.executionOptions.sandbox_mode"
-              label="沙箱"
-              :options="sandboxOptions"
-              @update:model-value="
-                sessionStore.executionOptions.sandbox_mode =
-                  $event as CodexSandboxMode
-              "
-            />
-            <BaseSelect
-              v-if="approvalPolicyOptions.length > 1"
-              :model-value="sessionStore.executionOptions.approval_policy"
-              label="审批策略"
-              :options="approvalPolicyOptions"
-              @update:model-value="
-                sessionStore.executionOptions.approval_policy =
-                  $event as CodexApprovalPolicy
-              "
-            />
-          </div>
-        </details>
-      </div>
     </div>
 
     <div
@@ -135,19 +79,12 @@
         />
       </div>
 
-      <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-        <div
-          v-if="pendingApprovals.length"
-          class="max-h-[42%] overflow-y-auto border-b border-line p-3 sm:p-4"
-        >
-          <div class="grid gap-3">
-            <CodexApprovalCard
-              v-for="approval in pendingApprovals"
-              :key="approval.approval_id"
-              :approval="approval"
-            />
-          </div>
-        </div>
+      <CodexApprovalPrompt
+        v-if="pendingApprovals.length"
+        :count="pendingApprovals.length"
+        @open="captureApprovalReturnAnchor"
+      />
+      <div class="h-full min-h-0">
         <div class="min-h-0 min-w-0 px-2 py-2 sm:px-4">
           <div
             v-if="sessionStore.selectedHistoryCursor"
@@ -158,10 +95,16 @@
             </BaseButton>
           </div>
           <CodexTimeline
+            ref="timeline"
+            :confirmation-required-operation-ids="
+              sessionStore.confirmationRequiredOperationIds
+            "
             :items="sessionStore.selectedTimeline"
             :thread-id="threadId"
             :working="showWorkingIndicator"
             @open-context="openTimelineContext"
+            @retry="retryMessage"
+            @reload="reloadTimelineBody"
           />
         </div>
       </div>
@@ -179,10 +122,14 @@
         指令已提交，正在同步会话状态。
       </p>
       <CodexComposer
+        ref="composer"
         v-model="draft"
         :active-turn="activeTurn"
         :submitting="submitting"
-        :disabled="hostUnavailable || !canUseTools || archived"
+        :disabled="composerDisabled"
+        :disabled-reason="composerDisabledReason"
+        @before-height-change="captureTimelineAnchor"
+        @height-change="restoreTimelineAnchor"
         @submit="send"
       />
     </footer>
@@ -190,24 +137,22 @@
 </template>
 
 <script setup lang="ts">
-import { LoaderCircle, RefreshCw, SlidersHorizontal } from '@lucide/vue'
+import { LoaderCircle, RefreshCw } from '@lucide/vue'
 import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
-import type { CodexApprovalPolicy } from '~/types/codex-host'
-import {
-  CODEX_APPROVAL_RESTRICTION_ORDER,
-  CODEX_SANDBOX_RESTRICTION_ORDER,
-  CodexCapabilityCode,
-  CodexHostStatus,
-  CodexSandboxMode,
-} from '~/types/codex-host'
+import { CodexCapabilityCode, CodexHostStatus } from '~/types/codex-host'
 import { CodexTimelineItemKind } from '~/types/codex-item'
 import { CodexThreadHistoryStatus } from '~/types/codex-thread'
-import { LOGIN_ROUTE } from '~/types/routes'
+import type { CodexTimelineScrollAnchor } from '~/types/codex-timeline-scroll'
+import { buildCodexApprovalsRoute, LOGIN_ROUTE } from '~/types/routes'
+import { getCodexTurnSubmissionBlockReason } from '~/stores/codex-session'
 import { CodexContextView } from '~/stores/codex-ui'
-
-const STALLED_ACTIVITY_THRESHOLD_MS = 90_000
-const ACTIVITY_REFRESH_INTERVAL_MS = 10_000
+import {
+  readCodexDraftSession,
+  writeCodexDraftSession,
+  type CodexDraftSessionScope,
+} from '~/utils/codex-draft-session'
+import { isCodexTurnRuntimeStalled } from '~/utils/codex-turn-runtime'
 
 enum CodexConversationPageState {
   Restoring = 'restoring',
@@ -227,6 +172,7 @@ definePageMeta({
 })
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const sessionStore = useCodexSessionStore()
 const realtimeStore = useCodexRealtimeStore()
@@ -242,11 +188,55 @@ const routeWorkspaceId = computed(() =>
     ? route.query.workspaceId
     : undefined,
 )
+const routeContextView = computed<CodexContextView | null>(() => {
+  const context = route.query.context
+  return Object.values(CodexContextView).includes(context as CodexContextView)
+    ? (context as CodexContextView)
+    : null
+})
+const routeContextItemId = computed(() =>
+  typeof route.query.contextItem === 'string' ? route.query.contextItem : null,
+)
+const routeTimelineAnchor = computed<CodexTimelineScrollAnchor | null>(() => {
+  const itemId = route.query.timelineAnchorItem
+  const offsetText = route.query.timelineAnchorOffset
+  if (typeof itemId !== 'string' || typeof offsetText !== 'string') return null
+  const offset = Number(offsetText)
+  return Number.isFinite(offset) && Math.abs(offset) <= 1_000_000
+    ? { itemId, offset }
+    : null
+})
+/** Context 覆盖层关闭后的阅读锚点只写入当前 URL 历史状态，不包含正文或草稿。 */
+const routeContextReturnAnchor = computed<CodexTimelineScrollAnchor | null>(
+  () => {
+    const itemId = route.query.contextAnchorItem
+    const offsetText = route.query.contextAnchorOffset
+    if (typeof itemId !== 'string' || typeof offsetText !== 'string')
+      return null
+    const offset = Number(offsetText)
+    return Number.isFinite(offset) && Math.abs(offset) <= 1_000_000
+      ? { itemId, offset }
+      : null
+  },
+)
 const activeTurn = computed(() => Boolean(thread.value?.active_turn_id))
 const archived = computed(() => Boolean(thread.value?.archived))
 const pendingApprovals = computed(() =>
   approvalStore.pendingForThread(threadId.value),
 )
+const approvalReturnAnchor = ref<CodexTimelineScrollAnchor | null>(null)
+const approvalCenterRoute = computed(() => {
+  const query = { ...route.query }
+  if (approvalReturnAnchor.value) {
+    query.timelineAnchorItem = approvalReturnAnchor.value.itemId
+    query.timelineAnchorOffset = String(approvalReturnAnchor.value.offset)
+  }
+  return buildCodexApprovalsRoute({
+    threadId: threadId.value,
+    returnTo: router.resolve({ path: route.path, query, hash: route.hash })
+      .fullPath,
+  })
+})
 const canOperate = computed(() => authStore.canScope(AuthScope.CodexOperate))
 const canUseTools = computed(
   () =>
@@ -266,36 +256,52 @@ const canCompact = computed(
 const hostUnavailable = computed(
   () => sessionStore.selectedHost?.status !== CodexHostStatus.Online,
 )
+const submissionBlockReason = computed(() =>
+  getCodexTurnSubmissionBlockReason(realtimeStore.status),
+)
+const composerDisabled = computed(
+  () =>
+    hostUnavailable.value ||
+    !canUseTools.value ||
+    archived.value ||
+    Boolean(submissionBlockReason.value),
+)
+const composerDisabledReason = computed(() => {
+  if (submissionBlockReason.value) return submissionBlockReason.value
+  if (hostUnavailable.value) return '主机离线，草稿会保留在当前页面。'
+  if (archived.value) return '会话已归档，恢复后才能继续发送。'
+  return '当前账号没有发送消息所需权限。'
+})
 const submitting = ref(false)
 const waitingForTurnStart = ref(false)
-const submittedAt = ref<number | null>(null)
-const now = ref(Date.now())
 const resyncing = ref(false)
 const interrupting = ref(false)
 const compacting = ref(false)
 const pageError = ref('')
 const restoring = ref(true)
+const timeline = ref<{
+  captureAnchor: () => CodexTimelineScrollAnchor | null
+  onCommit: () => void
+  restoreAnchor: () => void
+  restoreReadingAnchor: (anchor: CodexTimelineScrollAnchor) => Promise<void>
+  visibleItemIds: () => string[]
+} | null>(null)
+const composer = ref<{ blurInput: () => void } | null>(null)
 const draft = computed({
   get: () => uiStore.draftsByThreadId[threadId.value] ?? '',
   set: (value: string) => uiStore.setDraft(threadId.value, value),
 })
-const lastActivityAt = computed(() => {
-  const recencyAt = Date.parse(thread.value?.recency_at || '')
-  return Math.max(
-    Number.isFinite(recencyAt) ? recencyAt : 0,
-    realtimeStore.lastMessageAt ?? 0,
-    submittedAt.value ?? 0,
-  )
+const draftSessionScope = computed<CodexDraftSessionScope | null>(() => {
+  const ownerSubjectId = authStore.principal?.subject_id
+  if (!ownerSubjectId || !threadId.value) return null
+  return { ownerSubjectId, threadId: threadId.value }
 })
-const stalled = computed(
-  () =>
-    lastActivityAt.value > 0 &&
-    now.value - lastActivityAt.value > STALLED_ACTIVITY_THRESHOLD_MS &&
-    (activeTurn.value || waitingForTurnStart.value),
-)
+const restoredDraftSessionKeys = new Set<string>()
+const runtime = computed(() => thread.value?.turn_runtime ?? null)
+const stalled = computed(() => isCodexTurnRuntimeStalled(runtime.value))
 const lastActivityLabel = computed(() =>
-  lastActivityAt.value > 0
-    ? new Date(lastActivityAt.value).toLocaleTimeString('zh-CN', {
+  runtime.value?.last_activity_at
+    ? new Date(runtime.value.last_activity_at).toLocaleTimeString('zh-CN', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -305,6 +311,22 @@ const lastActivityLabel = computed(() =>
 const showWorkingIndicator = computed(
   () => submitting.value || waitingForTurnStart.value || activeTurn.value,
 )
+
+/** 详情页与列表页共享筛选查询参数，浏览器前进/后退后仍请求同一结果集。 */
+const applyRouteFilters = async (reload: boolean): Promise<void> => {
+  const searchTerm =
+    typeof route.query.search === 'string' ? route.query.search.trim() : ''
+  const showArchived = route.query.archived === 'true'
+  if (
+    searchTerm === sessionStore.threadSearchTerm &&
+    showArchived === sessionStore.showArchivedThreads
+  ) {
+    return
+  }
+  sessionStore.threadSearchTerm = searchTerm
+  sessionStore.showArchivedThreads = showArchived
+  if (reload && sessionStore.selectedHostId) await sessionStore.loadThreads()
+}
 const historyWarning = computed(() => {
   if (
     sessionStore.selectedHistoryStatus ===
@@ -333,60 +355,110 @@ const pageState = computed(() => {
   }
   return CodexConversationPageState.Ready
 })
-const modelOptions = computed(() =>
-  (sessionStore.selectedHost?.capabilities.model_ids ?? []).map((value) => ({
-    value,
-    label: value,
-  })),
-)
-const reasoningOptions = computed(() =>
-  (sessionStore.selectedHost?.capabilities.reasoning_efforts ?? []).map(
-    (value) => ({ value, label: value }),
-  ),
-)
-const sandboxOptions = computed(() =>
-  CODEX_SANDBOX_RESTRICTION_ORDER.filter(
-    (mode) =>
-      Boolean(
-        sessionStore.selectedHost?.capabilities.sandbox_modes.includes(mode),
-      ) &&
-      (mode !== CodexSandboxMode.DangerFullAccess ||
-        authStore.canScope(AuthScope.CodexFullAccess)),
-  ).map((value) => ({ value, label: value })),
-)
-const approvalPolicyOptions = computed(() =>
-  CODEX_APPROVAL_RESTRICTION_ORDER.filter((policy) =>
-    Boolean(
-      sessionStore.selectedHost?.capabilities.approval_policies.includes(
-        policy,
-      ),
-    ),
-  ).map((value) => ({ value, label: value })),
-)
-const hasExecutionOptions = computed(
-  () =>
-    modelOptions.value.length > 0 ||
-    reasoningOptions.value.length > 0 ||
-    sandboxOptions.value.length > 1 ||
-    approvalPolicyOptions.value.length > 1,
-)
-
 const send = async (message: string): Promise<void> => {
   submitting.value = true
   waitingForTurnStart.value = !activeTurn.value
-  submittedAt.value = Date.now()
   pageError.value = ''
   try {
     await sessionStore.sendMessage(message)
     uiStore.clearDraft(threadId.value)
+    // 仅在服务端受理后失焦，避免失败时意外收起 Android 软键盘。
+    composer.value?.blurInput()
   } catch (error) {
     waitingForTurnStart.value = false
-    submittedAt.value = null
     pageError.value = error instanceof Error ? error.message : '消息发送失败。'
   } finally {
     submitting.value = false
   }
 }
+
+const captureTimelineAnchor = (): void => {
+  timeline.value?.captureAnchor()
+}
+
+/** 审批页返回地址只携带阅读锚点，不携带正文、草稿或权限数据。 */
+const captureApprovalReturnAnchor = (): void => {
+  approvalReturnAnchor.value = timeline.value?.captureAnchor() ?? null
+  void navigateTo(approvalCenterRoute.value)
+}
+
+/** 返回会话后清理 URL 中的一次性锚点，避免后续刷新重复恢复旧阅读位置。 */
+const restoreApprovalReturnAnchor = async (): Promise<void> => {
+  const anchor = routeTimelineAnchor.value
+  if (!anchor) return
+  await nextTick()
+  await timeline.value?.restoreReadingAnchor(anchor)
+  const query = { ...route.query }
+  delete query.timelineAnchorItem
+  delete query.timelineAnchorOffset
+  await router.replace({ path: route.path, query, hash: route.hash })
+}
+
+/** Context 关闭后沿用统一滚动控制器恢复阅读位置，并清理一次性 URL 锚点。 */
+const restoreContextReturnAnchor = async (): Promise<void> => {
+  const anchor = routeContextReturnAnchor.value
+  if (!anchor) return
+  await nextTick()
+  await timeline.value?.restoreReadingAnchor(anchor)
+  const query = { ...route.query }
+  delete query.contextAnchorItem
+  delete query.contextAnchorOffset
+  await router.replace({ path: route.path, query, hash: route.hash })
+}
+
+const restoreTimelineAnchor = (): void => {
+  void nextTick(() => {
+    timeline.value?.restoreAnchor()
+    timeline.value?.onCommit()
+  })
+}
+
+const retryMessage = async (clientOperationId: string): Promise<void> => {
+  submitting.value = true
+  pageError.value = ''
+  try {
+    await sessionStore.retryMessage(clientOperationId)
+  } catch (error) {
+    pageError.value = error instanceof Error ? error.message : '消息重试失败。'
+  } finally {
+    submitting.value = false
+  }
+}
+
+const reloadTimelineBody = async (itemId: string): Promise<void> => {
+  timeline.value?.captureAnchor()
+  pageError.value = ''
+  try {
+    await sessionStore.reloadTimelineBody(itemId)
+    await nextTick()
+    timeline.value?.onCommit()
+  } catch (error) {
+    pageError.value =
+      error instanceof Error ? error.message : '已回收内容重新加载失败。'
+  }
+}
+
+watch(
+  draftSessionScope,
+  (scope) => {
+    if (!import.meta.client || !scope) return
+    const key = `${scope.ownerSubjectId}:${scope.threadId}`
+    if (restoredDraftSessionKeys.has(key)) return
+    restoredDraftSessionKeys.add(key)
+    const restoredDraft = readCodexDraftSession(window.sessionStorage, scope)
+    if (restoredDraft && !draft.value)
+      uiStore.setDraft(scope.threadId, restoredDraft)
+  },
+  { immediate: true },
+)
+
+watch(draft, (value) => {
+  if (!import.meta.client || !draftSessionScope.value) return
+  const scope = draftSessionScope.value
+  const key = `${scope.ownerSubjectId}:${scope.threadId}`
+  if (!restoredDraftSessionKeys.has(key)) return
+  writeCodexDraftSession(window.sessionStorage, scope, value)
+})
 
 const interrupt = async (): Promise<void> => {
   interrupting.value = true
@@ -415,13 +487,27 @@ const compact = async (): Promise<void> => {
 }
 
 const loadMoreHistory = async (): Promise<void> => {
+  // prepend 会把新内容插入可见项之前；先交给唯一滚动控制器捕获锚点，随后由它的
+  // RAF 测量队列恢复，避免页面层与虚拟列表竞争 scrollTop。
+  timeline.value?.captureAnchor()
   try {
     await sessionStore.loadMoreHistory()
+    await nextTick()
+    timeline.value?.onCommit()
   } catch (error) {
     pageError.value =
       error instanceof Error ? error.message : '历史记录加载失败。'
   }
 }
+
+watch(
+  () => sessionStore.selectedTimeline,
+  async () => {
+    await nextTick()
+    sessionStore.evictTimelineBodies(timeline.value?.visibleItemIds() ?? [])
+  },
+  { flush: 'post' },
+)
 
 const resync = async (): Promise<void> => {
   resyncing.value = true
@@ -431,7 +517,6 @@ const resync = async (): Promise<void> => {
     if (authStore.canScope(AuthScope.CodexApprove))
       requests.push(approvalStore.load())
     await Promise.all(requests)
-    now.value = Date.now()
   } catch (error) {
     pageError.value =
       error instanceof Error ? error.message : '会话状态重新同步失败。'
@@ -450,22 +535,65 @@ const openTimelineContext = (
       : kind === CodexTimelineItemKind.Command
         ? CodexContextView.Output
         : CodexContextView.Approvals
-  uiStore.openContext(view, itemId)
+  openContextRoute(view, itemId)
 }
+
+const openConversationContext = (view: CodexContextView): void => {
+  openContextRoute(view)
+}
+
+/** 上下文面板状态由 URL 承载，刷新和浏览器前进/后退后仍可恢复当前对象。 */
+const openContextRoute = (
+  view: CodexContextView,
+  selectedItemId: string | null = null,
+): void => {
+  const returnAnchor = timeline.value?.captureAnchor()
+  uiStore.openContext(view, selectedItemId)
+  const query: Record<string, string | string[] | undefined> = {
+    ...route.query,
+    context: view,
+  }
+  if (selectedItemId) query.contextItem = selectedItemId
+  else delete query.contextItem
+  if (returnAnchor) {
+    query.contextAnchorItem = returnAnchor.itemId
+    query.contextAnchorOffset = String(returnAnchor.offset)
+  } else {
+    delete query.contextAnchorItem
+    delete query.contextAnchorOffset
+  }
+  void navigateTo(
+    { path: route.path, query, hash: route.hash },
+    { replace: true },
+  )
+}
+
+watch(
+  [routeContextView, routeContextItemId],
+  ([view, itemId], [previousView]) => {
+    if (view) {
+      uiStore.openContext(view, itemId)
+      return
+    }
+    uiStore.closeContext()
+    if (previousView) void restoreContextReturnAnchor()
+  },
+  { immediate: true },
+)
+
+watch(
+  [() => route.query.search, () => route.query.archived],
+  () => void applyRouteFilters(true),
+)
 
 watch(activeTurn, (isActive) => {
   if (!isActive) return
   waitingForTurnStart.value = false
-  submittedAt.value = null
 })
 
-let activityTimer: ReturnType<typeof setInterval> | null = null
-
 onMounted(async () => {
-  activityTimer = setInterval(() => {
-    now.value = Date.now()
-  }, ACTIVITY_REFRESH_INTERVAL_MS)
   try {
+    await applyRouteFilters(false)
     const restored = await sessionStore.restoreRouteSelection({
       hostId: routeHostId.value,
       workspaceId: routeWorkspaceId.value,
@@ -484,10 +612,10 @@ onMounted(async () => {
   } finally {
     restoring.value = false
   }
+  await restoreApprovalReturnAnchor()
 })
 
 onBeforeUnmount(() => {
-  if (activityTimer) clearInterval(activityTimer)
   uiStore.closeContext()
 })
 </script>

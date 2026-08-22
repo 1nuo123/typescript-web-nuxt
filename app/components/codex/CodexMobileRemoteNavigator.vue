@@ -182,6 +182,7 @@ import {
   CODEX_APPROVALS_ROUTE,
   CODEX_SETTINGS_ROUTE,
   buildCodexTaskRoute,
+  buildCodexTasksRoute,
 } from '~/types/routes'
 
 interface CodexMobileProjectGroup {
@@ -214,8 +215,37 @@ const threadStatusLabels: Readonly<Record<CodexThreadStatus, string>> = {
 const sessionStore = useCodexSessionStore()
 const approvalsStore = useCodexApprovalsStore()
 const authStore = useAuthStore()
+const route = useRoute()
 const searchTerm = ref(sessionStore.threadSearchTerm)
 const creating = ref(false)
+
+const taskRouteFilters = () => ({
+  searchTerm: sessionStore.threadSearchTerm || undefined,
+  archived: sessionStore.showArchivedThreads,
+})
+
+/** 移动端导航器直接承载任务列表，因此也必须先按 URL 恢复筛选。 */
+const applyRouteFilters = async (reload: boolean): Promise<void> => {
+  const routeSearch =
+    typeof route.query.search === 'string' ? route.query.search.trim() : ''
+  const archived = route.query.archived === 'true'
+  if (
+    routeSearch === sessionStore.threadSearchTerm &&
+    archived === sessionStore.showArchivedThreads
+  ) {
+    return
+  }
+  sessionStore.threadSearchTerm = routeSearch
+  searchTerm.value = routeSearch
+  sessionStore.showArchivedThreads = archived
+  if (reload && sessionStore.selectedHostId)
+    await sessionStore.loadThreads(null)
+}
+
+watch(
+  [() => route.query.search, () => route.query.archived],
+  () => void applyRouteFilters(true),
+)
 
 const projectGroups = computed<CodexMobileProjectGroup[]>(() =>
   sessionStore.workspaces
@@ -260,6 +290,7 @@ const threadRoute = (thread: CodexThread): string =>
   buildCodexTaskRoute(thread.upstream_thread_id, {
     hostId: thread.host_id,
     workspaceId: thread.workspace_id,
+    ...taskRouteFilters(),
   })
 
 const selectHost = async (event: Event): Promise<void> => {
@@ -267,14 +298,35 @@ const selectHost = async (event: Event): Promise<void> => {
   if (!hostId) return
   await sessionStore.selectHost(hostId)
   await sessionStore.loadThreads(null)
+  await navigateTo(
+    buildCodexTasksRoute({
+      hostId,
+      workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
+    }),
+  )
 }
 
 const selectWorkspace = (workspaceId: string): void => {
   sessionStore.selectWorkspace(workspaceId)
+  void navigateTo(
+    buildCodexTasksRoute({
+      hostId: sessionStore.selectedHostId ?? undefined,
+      workspaceId,
+      ...taskRouteFilters(),
+    }),
+  )
 }
 
 const submitSearch = async (): Promise<void> => {
   await sessionStore.setThreadSearchTerm(searchTerm.value, null)
+  await navigateTo(
+    buildCodexTasksRoute({
+      hostId: sessionStore.selectedHostId ?? undefined,
+      workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      ...taskRouteFilters(),
+    }),
+  )
 }
 
 const createConversation = async (): Promise<void> => {
@@ -297,15 +349,14 @@ const createConversation = async (): Promise<void> => {
 }
 
 onMounted(async () => {
-  if (!sessionStore.hosts.length) await sessionStore.loadHosts()
-  if (!sessionStore.selectedHostId && sessionStore.hosts[0]) {
-    await sessionStore.selectHost(sessionStore.hosts[0].host_id)
-  }
-  if (sessionStore.selectedHostId) {
-    await Promise.all([
-      sessionStore.loadWorkspaces(),
-      sessionStore.loadThreads(null),
-    ])
-  }
+  await applyRouteFilters(false)
+  await sessionStore.restoreRouteSelection({
+    hostId:
+      typeof route.query.hostId === 'string' ? route.query.hostId : undefined,
+    workspaceId:
+      typeof route.query.workspaceId === 'string'
+        ? route.query.workspaceId
+        : undefined,
+  })
 })
 </script>

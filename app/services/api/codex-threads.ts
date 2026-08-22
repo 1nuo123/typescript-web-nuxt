@@ -6,6 +6,8 @@ import type {
   CodexThreadCollection,
   CodexThreadCreateRequest,
   CodexThreadAuthoritySnapshot,
+  CodexThreadHistoryItemReload,
+  CodexThreadHistoryPage,
 } from '~/types/codex-thread'
 import type {
   CodexOperationAccepted,
@@ -17,7 +19,7 @@ import {
   createCodexIdempotencyKey,
 } from './codex-api-client'
 
-const CODEX_DEFAULT_HISTORY_LIMIT = 100
+const CODEX_DEFAULT_HISTORY_LIMIT = 50
 
 export const buildCodexThreadsPath = (hostId: string): string =>
   `/codex/hosts/${encodeURIComponent(hostId)}/threads`
@@ -27,10 +29,25 @@ export const buildCodexThreadPath = (
   threadId: string,
 ): string => `${buildCodexThreadsPath(hostId)}/${encodeURIComponent(threadId)}`
 
+const buildCodexThreadHistoryPath = (
+  hostId: string,
+  threadId: string,
+): string => `${buildCodexThreadPath(hostId, threadId)}/history`
+
+const buildCodexThreadHistoryItemsPath = (
+  hostId: string,
+  threadId: string,
+): string => `${buildCodexThreadHistoryPath(hostId, threadId)}/items`
+
 const commandOptions = (idempotencyKey?: string) => ({
   headers: buildCodexIdempotencyHeaders(
     idempotencyKey ?? createCodexIdempotencyKey(),
   ),
+})
+
+/** turn 的 body 身份与 HTTP 幂等头必须完全相同，服务端会拒绝不一致请求。 */
+const turnCommandOptions = (body: CodexTurnMessageRequest) => ({
+  headers: buildCodexIdempotencyHeaders(body.client_operation_id),
 })
 
 export const createCodexThreadsClient = () => {
@@ -49,7 +66,6 @@ export const createCodexThreadsClient = () => {
     read: (
       hostId: string,
       threadId: string,
-      historyCursor?: string | null,
       historyLimit = CODEX_DEFAULT_HISTORY_LIMIT,
     ) =>
       client.get<CodexThreadAuthoritySnapshot>(
@@ -58,9 +74,32 @@ export const createCodexThreadsClient = () => {
           query: {
             include_history: true,
             history_limit: historyLimit,
-            ...(historyCursor ? { history_cursor: historyCursor } : {}),
           },
         },
+      ),
+    readHistory: (
+      hostId: string,
+      threadId: string,
+      beforeCursor: string,
+      historyLimit = CODEX_DEFAULT_HISTORY_LIMIT,
+    ) =>
+      client.get<CodexThreadHistoryPage>(
+        buildCodexThreadHistoryPath(hostId, threadId),
+        {
+          query: {
+            before_cursor: beforeCursor,
+            limit: historyLimit,
+          },
+        },
+      ),
+    readHistoryItems: (
+      hostId: string,
+      threadId: string,
+      itemIds: readonly string[],
+    ) =>
+      client.get<CodexThreadHistoryItemReload>(
+        buildCodexThreadHistoryItemsPath(hostId, threadId),
+        { query: { item_id: [...itemIds] } },
       ),
     create: (
       hostId: string,
@@ -82,23 +121,17 @@ export const createCodexThreadsClient = () => {
       hostId: string,
       threadId: string,
       body: CodexTurnMessageRequest,
-      idempotencyKey?: string,
     ) =>
       client.post<CodexOperationAccepted>(
         `${buildCodexThreadPath(hostId, threadId)}/turns`,
         body,
-        commandOptions(idempotencyKey),
+        turnCommandOptions(body),
       ),
-    steer: (
-      hostId: string,
-      threadId: string,
-      body: CodexTurnMessageRequest,
-      idempotencyKey?: string,
-    ) =>
+    steer: (hostId: string, threadId: string, body: CodexTurnMessageRequest) =>
       client.post<CodexOperationAccepted>(
         `${buildCodexThreadPath(hostId, threadId)}/steer`,
         body,
-        commandOptions(idempotencyKey),
+        turnCommandOptions(body),
       ),
     interrupt: (hostId: string, threadId: string, idempotencyKey?: string) =>
       client.post<CodexOperationAccepted>(

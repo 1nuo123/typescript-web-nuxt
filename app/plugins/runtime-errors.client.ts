@@ -31,7 +31,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.config.errorHandler = (error, instance, info) => {
     logger.capture(error, {
       source: RuntimeLogSource.Vue,
-      detail: info,
+      code: `client.vue.${info === 'render' ? 'render_failed' : 'runtime_failed'}`,
     })
     previousErrorHandler?.(error, instance, info)
     showFatalError(error)
@@ -44,7 +44,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
     logger.capture(event.error ?? event.message, {
       source: RuntimeLogSource.Window,
-      detail: event.filename,
+      code: 'client.window.error',
     })
   })
 

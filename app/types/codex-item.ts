@@ -31,6 +31,8 @@ export interface CodexTimelineItemHeader {
   schema_version: typeof CODEX_TIMELINE_ITEM_SCHEMA_VERSION
   status: CodexTimelineItemStatus
   created_at?: string | null
+  /** 鐢ㄤ簬鎶婃潈濞佺殑 userMessage 涓庢湰鍦拌姹傛寜鎿嶄綔 ID 瀵硅处，缁濅笉浠ユ鏂囧尮閰嶃€?*/
+  client_operation_id?: string | null
 }
 
 interface CodexTimelineDetailBase {
@@ -166,3 +168,20 @@ export type CodexTimelineItem =
   | CodexCommandTimelineItem
   | CodexDiffTimelineItem
   | CodexApprovalTimelineItem
+
+/**
+ * 仅在当前标签页内存回收后使用的渲染占位符。它保留稳定定位字段与原类型，
+ * 但不保留正文；恢复必须按 item ID 向权威历史读取，绝不以正文搜索或匹配。
+ */
+export interface CodexEvictedTimelineItem {
+  header: CodexTimelineItemHeader
+  detail: {
+    kind: 'evicted'
+    schema_version: typeof CODEX_TIMELINE_ITEM_SCHEMA_VERSION
+    original_kind: CodexTimelineItemKind
+  }
+}
+
+export type CodexTimelineRenderableItem =
+  | CodexTimelineItem
+  | CodexEvictedTimelineItem

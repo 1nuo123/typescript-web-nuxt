@@ -44,8 +44,11 @@ describe('runtime error plugins', () => {
       message: 'Vue failure',
     })
     expect(useClientLogger().logs.value[0]).toMatchObject({
-      source: RuntimeLogSource.Vue,
-      detail: VUE_ERROR_INFO,
+      header: { source: RuntimeLogSource.Vue },
+      detail: {
+        summary: 'vue_error',
+        error_code: 'client.vue.render_failed',
+      },
     })
   })
 
@@ -79,9 +82,11 @@ describe('runtime error plugins', () => {
     } as ErrorEvent)
     expect(useError().value).toBeUndefined()
     expect(useClientLogger().logs.value[0]).toMatchObject({
-      source: RuntimeLogSource.Window,
-      message: 'Window failure',
-      detail: 'app.js',
+      header: { source: RuntimeLogSource.Window },
+      detail: {
+        summary: 'window_error',
+        error_code: 'client.window.error',
+      },
     })
 
     const rejectionListener = listeners[
@@ -92,13 +97,19 @@ describe('runtime error plugins', () => {
     } as PromiseRejectionEvent)
     expect(useError().value).toBeUndefined()
     expect(useClientLogger().logs.value[0]).toMatchObject({
-      source: RuntimeLogSource.Promise,
-      message: 'Promise failure',
+      header: { source: RuntimeLogSource.Promise },
+      detail: { summary: 'promise_rejection' },
     })
     expect(useClientLogger().logs.value[1]).toMatchObject({
-      source: RuntimeLogSource.Window,
-      message: 'Window failure',
+      header: { source: RuntimeLogSource.Window },
+      detail: { summary: 'window_error' },
     })
+    expect(JSON.stringify(useClientLogger().logs.value)).not.toContain(
+      'Window failure',
+    )
+    expect(JSON.stringify(useClientLogger().logs.value)).not.toContain(
+      'Promise failure',
+    )
   })
 
   it('does not turn browser ResizeObserver delivery warnings into fatal pages', () => {
@@ -133,6 +144,33 @@ describe('runtime error plugins', () => {
     expect(preventDefault).toHaveBeenCalledOnce()
     expect(useError().value).toBeUndefined()
     expect(useClientLogger().logs.value).toHaveLength(0)
+  })
+
+  it('rejects free-text diagnostic codes and never serializes the source error', () => {
+    const captured = useClientLogger().capture(
+      new Error('Bearer access-token-value must never reach diagnostics'),
+      {
+        source: RuntimeLogSource.Request,
+        code: 'Bearer access-token-value',
+      },
+    )
+
+    expect(captured).toBe(true)
+    const entry = useClientLogger().logs.value[0]
+    expect(entry).toMatchObject({
+      header: {
+        kind: 'client_diagnostic',
+        schema_version: '1.0',
+        source: RuntimeLogSource.Request,
+      },
+      detail: {
+        summary: 'request_failure',
+        error_code: 'client.runtime.unclassified',
+      },
+    })
+    expect(JSON.stringify(entry)).not.toContain('access-token-value')
+    expect(entry).not.toHaveProperty('header.route')
+    expect(entry).not.toHaveProperty('header.threadId')
   })
 
   it('keeps server HTTP errors stable and upgrades unknown server errors', () => {

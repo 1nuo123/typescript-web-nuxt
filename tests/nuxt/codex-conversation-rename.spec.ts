@@ -23,6 +23,7 @@ const thread: CodexThread = {
   reasoning_effort: null,
   status: CodexThreadStatus.Idle,
   active_turn_id: null,
+  turn_runtime: null,
   archived: false,
   is_pinned: false,
   source_kind: 'app_server',
