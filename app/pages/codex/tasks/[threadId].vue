@@ -29,12 +29,12 @@
       </span>
     </div>
 
-    <div v-else class="min-h-0 min-w-0 overflow-hidden">
+    <div v-else class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div
         v-if="
           pageError || hostUnavailable || stalled || historyWarning || archived
         "
-        class="grid gap-2 border-b border-line px-3 py-2 sm:px-4"
+        class="grid shrink-0 gap-2 border-b border-line px-3 py-2 sm:px-4"
       >
         <AppAlert
           v-if="pageError"
@@ -79,21 +79,22 @@
         />
       </div>
 
-      <CodexApprovalPrompt
-        v-if="pendingApprovals.length"
-        :count="pendingApprovals.length"
-        @open="captureApprovalReturnAnchor"
-      />
-      <div class="h-full min-h-0">
-        <div class="min-h-0 min-w-0 px-2 py-2 sm:px-4">
-          <div
-            v-if="sessionStore.selectedHistoryCursor"
-            class="mb-2 flex justify-center"
-          >
-            <BaseButton size="sm" variant="secondary" @click="loadMoreHistory">
-              加载更早记录
-            </BaseButton>
-          </div>
+      <div v-if="pendingApprovals.length" class="shrink-0">
+        <CodexApprovalPrompt
+          :count="pendingApprovals.length"
+          @open="captureApprovalReturnAnchor"
+        />
+      </div>
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col px-2 py-2 sm:px-4">
+        <div
+          v-if="sessionStore.selectedHistoryCursor"
+          class="mb-2 flex shrink-0 justify-center"
+        >
+          <BaseButton size="sm" variant="secondary" @click="loadMoreHistory">
+            加载更早记录
+          </BaseButton>
+        </div>
+        <div class="min-h-0 flex-1">
           <CodexTimeline
             ref="timeline"
             :confirmation-required-operation-ids="
