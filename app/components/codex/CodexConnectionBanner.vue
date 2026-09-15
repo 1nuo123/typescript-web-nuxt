@@ -15,6 +15,13 @@ const props = defineProps<{
   status: CodexRealtimeConnectionStatus
   reconnectAttempt?: number
   error?: string | null
+  lastClose?: {
+    code: number
+    wasClean: boolean
+    reason: string | null
+    occurredAt: number
+    durationMs: number | null
+  } | null
 }>()
 
 const message = computed(() => {
@@ -26,7 +33,10 @@ const message = computed(() => {
     return '实时协议不兼容，请刷新客户端或检查服务端版本。'
   }
   if (props.status === CodexRealtimeConnectionStatus.Reconnecting) {
-    return `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次）…`
+    const close = props.lastClose
+    return close
+      ? `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次，连接代码 ${close.code}）…`
+      : `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次）…`
   }
   if (props.status === CodexRealtimeConnectionStatus.Resyncing) {
     return '正在同步权威状态，暂时冻结写入。'

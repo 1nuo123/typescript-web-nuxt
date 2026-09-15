@@ -156,14 +156,14 @@
 
       <template v-else>
         <p
-          v-if="pendingApprovals.length === 0"
+          v-if="contextApprovals.length === 0"
           class="m-0 py-10 text-center text-xs text-ink-muted"
         >
-          当前会话没有待处理审批。
+          当前会话没有待处理或交付中的审批。
         </p>
         <div v-else class="grid gap-3">
           <CodexApprovalCard
-            v-for="approval in pendingApprovals"
+            v-for="approval in contextApprovals"
             :key="approval.approval_id"
             :approval="approval"
           />
@@ -189,6 +189,7 @@ import {
   type CodexDiffFile,
   type CodexDiffTimelineItem,
 } from '~/types/codex-item'
+import { CodexApprovalState, type CodexApproval } from '~/types/codex-approval'
 import { CodexContextView } from '~/stores/codex-ui'
 
 const sessionStore = useCodexSessionStore()
@@ -211,6 +212,25 @@ const commandItems = computed<CodexCommandTimelineItem[]>(() =>
 const pendingApprovals = computed(() =>
   sessionStore.selectedThreadId
     ? approvalStore.pendingForThread(sessionStore.selectedThreadId)
+    : [],
+)
+const contextApprovals = computed<CodexApproval[]>(() =>
+  sessionStore.selectedThreadId
+    ? Object.values(approvalStore.approvalsById)
+        .filter(
+          (approval) =>
+            approval.thread_id === sessionStore.selectedThreadId &&
+            [
+              CodexApprovalState.Pending,
+              CodexApprovalState.Claimed,
+              CodexApprovalState.DeliveryFailed,
+            ].includes(approval.state),
+        )
+        .sort(
+          (left, right) =>
+            right.updated_at.localeCompare(left.updated_at) ||
+            right.approval_id.localeCompare(left.approval_id),
+        )
     : [],
 )
 const selectedDiff = computed(

@@ -119,6 +119,8 @@ const normalizeFileChanges = (value: unknown): CodexApprovalFileChange[] => {
     if (!path) return []
     return [
       {
+        diff: typeof item.diff === 'string' ? item.diff : null,
+        truncated: readBoolean(item.truncated),
         path,
         change_kind: readString(item.change_kind) ?? 'modified',
         added_lines: readNullableNumber(item.added_lines),

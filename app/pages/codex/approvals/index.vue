@@ -228,8 +228,12 @@ watch(
     if (
       returnedToConversation.value ||
       !approval ||
+      (approval.state !== CodexApprovalState.Applied &&
+        approval.state !== CodexApprovalState.Cancelled) ||
       !returnRoute.value ||
-      (selectedThreadId.value && approval.thread_id !== selectedThreadId.value)
+      (selectedThreadId.value &&
+        approval.thread_id !== selectedThreadId.value) ||
+      approvalStore.pendingForThread(approval.thread_id).length > 0
     ) {
       return
     }

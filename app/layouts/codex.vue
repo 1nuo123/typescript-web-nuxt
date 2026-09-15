@@ -4,6 +4,7 @@
       :status="status"
       :reconnect-attempt="reconnectAttempt"
       :error="lastError"
+      :last-close="lastClose"
     />
 
     <div v-if="isMobile" class="h-dvh min-h-0 min-w-0 overflow-hidden">
@@ -36,7 +37,7 @@ const realtimeStore = useCodexRealtimeStore()
 const approvalsStore = useCodexApprovalsStore()
 const uiStore = useCodexUiStore()
 const experienceFlags = useCodexExperienceFeatureFlags()
-const { status, reconnectAttempt, lastError } = storeToRefs(realtimeStore)
+const { status, reconnectAttempt, lastError, lastClose } = storeToRefs(realtimeStore)
 const { width, isMobile } = useBreakpoints()
 
 const desktopGridClass = computed(() =>

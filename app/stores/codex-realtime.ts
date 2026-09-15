@@ -19,6 +19,23 @@ interface CodexRealtimeStoreState {
   reconnectAttempt: number
   lastError: string | null
   lastMessageAt: number | null
+  connectedAt: number | null
+  lastClose: {
+    code: number
+    wasClean: boolean
+    reason: string | null
+    occurredAt: number
+    durationMs: number | null
+  } | null
+}
+
+export interface CodexRealtimeCheckpoint {
+  streamEpoch: string | null
+  lastCursor: string | null
+  seenEventIds: string[]
+  seenCursors: string[]
+  gapDetected: boolean
+  lastMessageAt: number | null
 }
 
 export const useCodexRealtimeStore = defineStore('codex-realtime', {
@@ -32,8 +49,30 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
     reconnectAttempt: 0,
     lastError: null,
     lastMessageAt: null,
+    connectedAt: null,
+    lastClose: null,
   }),
   actions: {
+    captureCheckpoint(): CodexRealtimeCheckpoint {
+      return {
+        streamEpoch: this.streamEpoch,
+        lastCursor: this.lastCursor,
+        seenEventIds: [...this.seenEventIds],
+        seenCursors: [...this.seenCursors],
+        gapDetected: this.gapDetected,
+        lastMessageAt: this.lastMessageAt,
+      }
+    },
+
+    restoreCheckpoint(checkpoint: CodexRealtimeCheckpoint): void {
+      this.streamEpoch = checkpoint.streamEpoch
+      this.lastCursor = checkpoint.lastCursor
+      this.seenEventIds = [...checkpoint.seenEventIds]
+      this.seenCursors = [...checkpoint.seenCursors]
+      this.gapDetected = checkpoint.gapDetected
+      this.lastMessageAt = checkpoint.lastMessageAt
+    },
+
     acceptEvent(event: CodexRealtimeEvent): CodexRealtimeApplyResult {
       const cursor = event.header.cursor
       if (this.seenEventIds.includes(event.header.event_id)) {
@@ -91,6 +130,29 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
       this.status = CodexRealtimeConnectionStatus.Connected
       this.reconnectAttempt = 0
       this.lastError = null
+      this.connectedAt ??= Date.now()
+    },
+
+    recordClose(close: {
+      code: number
+      wasClean: boolean
+      reason?: string | null
+    }): void {
+      const occurredAt = Date.now()
+      this.lastClose = {
+        code: close.code,
+        wasClean: close.wasClean,
+        reason:
+          typeof close.reason === 'string'
+            ? close.reason.slice(0, 120) || null
+            : null,
+        occurredAt,
+        durationMs:
+          this.connectedAt === null
+            ? null
+            : Math.max(0, occurredAt - this.connectedAt),
+      }
+      this.connectedAt = null
     },
 
     markOffline(): void {

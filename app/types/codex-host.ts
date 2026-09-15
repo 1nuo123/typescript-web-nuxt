@@ -57,6 +57,17 @@ export interface CodexCapabilityDetail {
 
 export interface CodexHostCapabilities {
   items: CodexCapabilityDetail[]
+  app_server_instance_id?: string | null
+  model_catalog?: {
+    state: 'unknown' | 'ready' | 'unavailable'
+    models: {
+      model: string
+      display_name: string
+      reasoning_efforts: string[]
+      default_reasoning_effort: string | null
+      is_default: boolean
+    }[]
+  }
   model_ids: string[]
   reasoning_efforts: string[]
   sandbox_modes: CodexSandboxMode[]

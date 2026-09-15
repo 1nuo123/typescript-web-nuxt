@@ -21,6 +21,18 @@
       />
       <template v-else-if="draft">
         <AppAlert
+          v-if="modelCatalog?.state !== 'ready'"
+          variant="warning"
+          title="主机模型能力未获取"
+          description="模型与推理强度暂不可确认。"
+        />
+        <AppAlert
+          v-if="modelSelectionError"
+          variant="warning"
+          title="模型设置不可用"
+          :description="modelSelectionError"
+        />
+        <AppAlert
           v-if="adjustedFields.length"
           variant="warning"
           title="设置已按当前权限调整"
@@ -75,7 +87,11 @@
         </p>
 
         <div class="flex justify-end border-t border-line pt-4">
-          <BaseButton :loading="saving" @click="savePreferences">
+          <BaseButton
+            :loading="saving"
+            :disabled="Boolean(modelSelectionError)"
+            @click="savePreferences"
+          >
             保存运行设置
           </BaseButton>
         </div>
@@ -134,19 +150,65 @@ const workspaceLabel = computed(() => {
   if (!workspace || !host) return '正在定位项目'
   return `${host.display_name} · ${workspace.display_name}`
 })
-const modelOptions = computed(() => [
-  { value: '', label: '使用主机默认模型' },
-  ...(sessionStore.selectedHost?.capabilities.model_ids ?? []).map((value) => ({
-    value,
-    label: value,
-  })),
-])
-const reasoningOptions = computed(() => [
-  { value: '', label: '使用主机默认推理强度' },
-  ...(sessionStore.selectedHost?.capabilities.reasoning_efforts ?? []).map(
-    (value) => ({ value, label: value }),
+const modelCatalog = computed(
+  () => sessionStore.selectedHost?.capabilities.model_catalog,
+)
+const selectedModelCapability = computed(() =>
+  modelCatalog.value?.models.find((item) =>
+    draft.value?.model ? item.model === draft.value.model : item.is_default,
   ),
-])
+)
+const modelOptions = computed(() => {
+  const options = [
+    { value: '', label: '继承线程或主机模型' },
+    ...(modelCatalog.value?.models ?? []).map((item) => ({
+      value: item.model,
+      label: item.display_name,
+    })),
+  ]
+  if (
+    draft.value?.model &&
+    !options.some((item) => item.value === draft.value?.model)
+  ) {
+    options.push({
+      value: draft.value.model,
+      label: `${draft.value.model}（当前不可用）`,
+    })
+  }
+  return options
+})
+const reasoningOptions = computed(() => {
+  const options = [
+    { value: '', label: '继承推理强度' },
+    ...(selectedModelCapability.value?.reasoning_efforts ?? []).map(
+      (value) => ({ value, label: value }),
+    ),
+  ]
+  if (
+    draft.value?.reasoning_effort &&
+    !options.some((item) => item.value === draft.value?.reasoning_effort)
+  ) {
+    options.push({
+      value: draft.value.reasoning_effort,
+      label: `${draft.value.reasoning_effort}（当前不可用）`,
+    })
+  }
+  return options
+})
+const modelSelectionError = computed(() => {
+  if (!draft.value?.model && !draft.value?.reasoning_effort) return ''
+  if (modelCatalog.value?.state !== 'ready')
+    return '等待主机模型能力同步后再保存。'
+  const model = selectedModelCapability.value
+  if (!model) return '所选模型当前不可用，请选择可用模型。'
+  if (
+    draft.value?.reasoning_effort &&
+    !model.reasoning_efforts.includes(draft.value.reasoning_effort)
+  ) {
+    return '当前模型不支持所选推理强度。'
+  }
+  return ''
+})
 const sandboxOptions = computed(() =>
   CODEX_SANDBOX_RESTRICTION_ORDER.filter((mode) => {
     const supported = Boolean(

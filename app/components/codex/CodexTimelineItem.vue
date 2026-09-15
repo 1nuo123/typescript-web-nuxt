@@ -29,7 +29,7 @@
           class="text-danger"
           aria-live="polite"
         >
-          {{ awaitingConfirmation ? '结果确认中' : '发送失败' }}
+          {{ awaitingConfirmation ? '受理状态待确认' : '发送失败' }}
         </span>
       </div>
       <div
@@ -63,7 +63,7 @@
           class="mt-2 text-xs font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary"
           @click="$emit('retry', failedClientOperationId)"
         >
-          {{ awaitingConfirmation ? '确认并重试' : '重试发送' }}
+          {{ awaitingConfirmation ? '按原请求核对' : '重试发送' }}
         </button>
       </div>
       <div

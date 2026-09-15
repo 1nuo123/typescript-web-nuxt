@@ -3,7 +3,7 @@
     class="flex w-full min-w-0 items-center gap-3 px-1 py-3"
     role="status"
     aria-live="polite"
-    aria-label="Codex 正在处理"
+    :aria-label="`Codex ${label}`"
   >
     <div
       class="grid size-7 shrink-0 place-items-center rounded-md border border-line bg-surface text-ink-muted"
@@ -14,7 +14,7 @@
     <div class="min-w-0 px-1">
       <div class="flex items-center gap-2 text-[0.6875rem] font-medium">
         <span class="text-ink-muted">Codex</span>
-        <span class="text-ink">正在处理</span>
+        <span class="text-ink">{{ label }}</span>
       </div>
       <div class="mt-2 flex h-2 items-center gap-1" aria-hidden="true">
         <span
@@ -30,6 +30,13 @@
 
 <script setup lang="ts">
 import { Bot } from '@lucide/vue'
+
+withDefaults(
+  defineProps<{
+    label?: string
+  }>(),
+  { label: '正在处理' },
+)
 
 const dotDelays = ['0ms', '160ms', '320ms']
 </script>

@@ -32,7 +32,13 @@
     <div v-else class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div
         v-if="
-          pageError || hostUnavailable || stalled || historyWarning || archived
+          pageError ||
+          turnFailureMessage ||
+          approvalDeliveryStatus ||
+          hostUnavailable ||
+          stalled ||
+          historyWarning ||
+          archived
         "
         class="grid shrink-0 gap-2 border-b border-line px-3 py-2 sm:px-4"
       >
@@ -41,6 +47,18 @@
           variant="danger"
           title="操作失败"
           :description="pageError"
+        />
+        <AppAlert
+          v-else-if="turnFailureMessage"
+          variant="danger"
+          title="本轮执行失败"
+          :description="turnFailureMessage"
+        />
+        <AppAlert
+          v-else-if="approvalDeliveryStatus"
+          :variant="approvalDeliveryStatus.variant"
+          :title="approvalDeliveryStatus.title"
+          :description="approvalDeliveryStatus.description"
         />
         <AppAlert
           v-else-if="hostUnavailable"
@@ -52,7 +70,7 @@
           v-else-if="stalled"
           variant="warning"
           title="会话状态等待同步"
-          :description="`最后活动时间：${lastActivityLabel}`"
+          :description="stalledDescription"
         >
           <BaseButton
             size="sm"
@@ -103,6 +121,7 @@
             :items="sessionStore.selectedTimeline"
             :thread-id="threadId"
             :working="showWorkingIndicator"
+            :working-label="workingLabel"
             @open-context="openTimelineContext"
             @retry="retryMessage"
             @reload="reloadTimelineBody"
@@ -142,8 +161,16 @@ import { LoaderCircle, RefreshCw } from '@lucide/vue'
 import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
 import { CodexCapabilityCode, CodexHostStatus } from '~/types/codex-host'
-import { CodexTimelineItemKind } from '~/types/codex-item'
-import { CodexThreadHistoryStatus } from '~/types/codex-thread'
+import {
+  CodexTimelineItemKind,
+  CodexTimelineItemStatus,
+} from '~/types/codex-item'
+import {
+  CodexThreadHistoryStatus,
+  CodexThreadStatus,
+} from '~/types/codex-thread'
+import { CodexApprovalState } from '~/types/codex-approval'
+import { CodexTurnPhase } from '~/types/codex-turn'
 import type { CodexTimelineScrollAnchor } from '~/types/codex-timeline-scroll'
 import { buildCodexApprovalsRoute, LOGIN_ROUTE } from '~/types/routes'
 import { getCodexTurnSubmissionBlockReason } from '~/stores/codex-session'
@@ -276,6 +303,8 @@ const composerDisabledReason = computed(() => {
 const submitting = ref(false)
 const waitingForTurnStart = ref(false)
 const resyncing = ref(false)
+const stalledCheckError = ref('')
+const lastCheckedStalledRuntime = ref<string | null>(null)
 const interrupting = ref(false)
 const compacting = ref(false)
 const pageError = ref('')
@@ -299,6 +328,50 @@ const draftSessionScope = computed<CodexDraftSessionScope | null>(() => {
 })
 const restoredDraftSessionKeys = new Set<string>()
 const runtime = computed(() => thread.value?.turn_runtime ?? null)
+const latestTurn = computed(() => {
+  const turns = Object.values(sessionStore.projection.turnsById).filter(
+    (turn) => turn.thread_id === threadId.value,
+  )
+  return turns.sort((left, right) => {
+    const leftAt = left.completed_at ?? left.started_at ?? ''
+    const rightAt = right.completed_at ?? right.started_at ?? ''
+    return (
+      rightAt.localeCompare(leftAt) || right.turn_id.localeCompare(left.turn_id)
+    )
+  })[0]
+})
+const turnFailureMessage = computed(() => {
+  if (thread.value?.status !== CodexThreadStatus.Failed) return ''
+  return latestTurn.value?.error_message || '本轮执行失败，请查看时间线后重试。'
+})
+const approvalDeliveryStatus = computed<{
+  variant: 'warning' | 'danger'
+  title: string
+  description: string
+} | null>(() => {
+  const approvals = Object.values(approvalStore.approvalsById)
+    .filter(
+      (approval) =>
+        approval.thread_id === threadId.value &&
+        (approval.state === CodexApprovalState.Claimed ||
+          approval.state === CodexApprovalState.DeliveryFailed),
+    )
+    .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+  const approval = approvals[0]
+  if (!approval) return null
+  if (approval.state === CodexApprovalState.DeliveryFailed) {
+    return {
+      variant: 'danger',
+      title: '审批交付失败',
+      description: 'Agent 尚未收到该审批结果，请在审批中心核对后重试。',
+    }
+  }
+  return {
+    variant: 'warning',
+    title: '审批正在交付',
+    description: '审批结果已提交，正在等待 Agent 确认应用。',
+  }
+})
 const stalled = computed(() => isCodexTurnRuntimeStalled(runtime.value))
 const lastActivityLabel = computed(() =>
   runtime.value?.last_activity_at
@@ -309,6 +382,31 @@ const lastActivityLabel = computed(() =>
       })
     : '尚未收到活动记录',
 )
+const stalledDescription = computed(() => {
+  if (resyncing.value) return '长时间未收到实际任务进展，正在核对当前权威状态。'
+  if (stalledCheckError.value) {
+    return `未能确认当前状态：${stalledCheckError.value}。现有文件结果仍可查看。`
+  }
+  return `长时间未收到实际任务进展，最后活动时间：${lastActivityLabel.value}`
+})
+const hasCompletedFileChange = computed(() =>
+  sessionStore.selectedTimeline.some(
+    (item) =>
+      item.detail.kind === CodexTimelineItemKind.Diff &&
+      item.header.status === CodexTimelineItemStatus.Completed,
+  ),
+)
+const workingLabel = computed(() => {
+  if (sessionStore.selectedPendingTurn && !activeTurn.value)
+    return '指令已提交，正在准备'
+  if (runtime.value?.phase === CodexTurnPhase.AwaitingApproval)
+    return '等待审批'
+  if (runtime.value?.phase === CodexTurnPhase.Stalled) return '正在核对会话状态'
+  if (activeTurn.value && hasCompletedFileChange.value)
+    return '变更已应用，仍在执行'
+  if (activeTurn.value) return '正在执行'
+  return '正在处理'
+})
 const showWorkingIndicator = computed(
   () => submitting.value || waitingForTurnStart.value || activeTurn.value,
 )
@@ -511,16 +609,20 @@ watch(
 )
 
 const resync = async (): Promise<void> => {
+  if (resyncing.value) return
   resyncing.value = true
   pageError.value = ''
+  stalledCheckError.value = ''
   try {
     const requests: Promise<void>[] = [sessionStore.refreshAuthority()]
     if (authStore.canScope(AuthScope.CodexApprove))
       requests.push(approvalStore.load())
     await Promise.all(requests)
   } catch (error) {
-    pageError.value =
+    const message =
       error instanceof Error ? error.message : '会话状态重新同步失败。'
+    if (stalled.value) stalledCheckError.value = message
+    else pageError.value = message
   } finally {
     resyncing.value = false
   }
@@ -587,10 +689,49 @@ watch(
   () => void applyRouteFilters(true),
 )
 
-watch(activeTurn, (isActive) => {
-  if (!isActive) return
-  waitingForTurnStart.value = false
-})
+watch(
+  [
+    activeTurn,
+    () => sessionStore.selectedPendingTurn,
+    () => runtime.value?.phase,
+  ],
+  ([isActive, pendingTurn, phase]) => {
+    if (
+      isActive ||
+      !pendingTurn ||
+      phase === 'completed' ||
+      phase === 'failed' ||
+      phase === 'interrupted'
+    ) {
+      waitingForTurnStart.value = false
+    }
+  },
+)
+
+watch(
+  [
+    stalled,
+    () => runtime.value?.turn_id,
+    () => runtime.value?.last_activity_at,
+    () => runtime.value?.lease_generation,
+  ],
+  ([isStalled, turnId, lastActivityAt, leaseGeneration]) => {
+    if (
+      !isStalled ||
+      !turnId ||
+      !lastActivityAt ||
+      leaseGeneration === undefined
+    )
+      return
+    const key = [threadId.value, turnId, lastActivityAt, leaseGeneration].join(
+      ':',
+    )
+    if (lastCheckedStalledRuntime.value === key) return
+    lastCheckedStalledRuntime.value = key
+    void resync()
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   try {

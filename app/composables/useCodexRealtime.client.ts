@@ -7,6 +7,7 @@ import {
   CodexRealtimeEventType,
   type CodexRealtimeEvent,
 } from '~/types/codex-realtime'
+import type { CodexRealtimeCheckpoint } from '~/stores/codex-realtime'
 import {
   CodexRealtimeContractError,
   validateCodexRealtimeBatch,
@@ -144,9 +145,12 @@ export const useCodexRealtime = () => {
   let queuedProjectionEvents: CodexRealtimeEvent[] = []
   let queuedProjectionGeneration: number | null = null
   let queuedRecoveryRequired = false
+  let queuedRealtimeCheckpoint: CodexRealtimeCheckpoint | null = null
   let manuallyClosed = false
   let protocolCompatible = true
   let authRecoveryInFlight: Promise<boolean> | null = null
+  let connectInFlight: Promise<void> | null = null
+  let reconnectAfterAttemptGeneration: number | null = null
   let controllerGeneration = 0
   let networkInformation: CodexNetworkInformation | null = null
 
@@ -165,6 +169,27 @@ export const useCodexRealtime = () => {
     queuedProjectionEvents = []
     queuedProjectionGeneration = null
     queuedRecoveryRequired = false
+    if (queuedRealtimeCheckpoint) {
+      realtimeStore.restoreCheckpoint(queuedRealtimeCheckpoint)
+      queuedRealtimeCheckpoint = null
+    }
+  }
+
+  /**
+   * Ticket issuance cannot be aborted through the current API client, so a
+   * lifecycle change invalidates its generation and releases the singleflight
+   * slot. A late ticket may resolve, but it can no longer open a socket or
+   * suppress the replacement connection.
+   */
+  const invalidateConnectionAttempt = (): WebSocket | null => {
+    controllerGeneration += 1
+    connectInFlight = null
+    reconnectAfterAttemptGeneration = null
+    clearTimers()
+    clearProjectionQueue()
+    const previousSocket = socket
+    socket = null
+    return previousSocket
   }
 
   const isCurrent = (generation: number): boolean =>
@@ -204,6 +229,7 @@ export const useCodexRealtime = () => {
     queuedProjectionEvents = []
     queuedProjectionGeneration = null
     queuedRecoveryRequired = false
+    queuedRealtimeCheckpoint = null
     if (!isCurrent(generation)) return
 
     const reducerStartedAt = performance.now()
@@ -338,6 +364,18 @@ export const useCodexRealtime = () => {
     flushImmediately: boolean,
   ): void => {
     if (!isCurrent(generation)) return
+    if (
+      queuedProjectionGeneration !== null &&
+      queuedProjectionGeneration !== generation
+    ) {
+      clearProjectionQueue()
+    }
+    if (queuedProjectionGeneration === null) {
+      // Cursor and de-duplication state is tentatively advanced while events
+      // wait for the frame flush. A dropped queue must roll back to this
+      // checkpoint so reconnect resumes from the last projected cursor.
+      queuedRealtimeCheckpoint = realtimeStore.captureCheckpoint()
+    }
     const projectionEvents: ReturnType<typeof validateCodexRealtimeEvent>[] = []
     let recoveryRequired = false
     for (const event of events) {
@@ -364,12 +402,19 @@ export const useCodexRealtime = () => {
     )
   }
 
-  const connect = async (): Promise<void> => {
+  const connectAttempt = async (): Promise<void> => {
+    const lifecycleGeneration = controllerGeneration
     await experienceFlags.load()
-    if (!runtimeConfig.public.codexFeatureEnabled || socket) return
-    manuallyClosed = false
-    protocolCompatible = true
+    if (
+      manuallyClosed ||
+      lifecycleGeneration !== controllerGeneration ||
+      !runtimeConfig.public.codexFeatureEnabled ||
+      socket
+    ) {
+      return
+    }
     const generation = ++controllerGeneration
+    protocolCompatible = true
     if (!navigator.onLine) {
       realtimeStore.markOffline()
       return
@@ -402,8 +447,13 @@ export const useCodexRealtime = () => {
       socketRef.addEventListener('message', (message) =>
         acceptMessage(message as MessageEvent<string>, generation, socketRef),
       )
-      socketRef.addEventListener('close', () => {
+      socketRef.addEventListener('close', (event) => {
         if (!isCurrent(generation)) return
+        realtimeStore.recordClose({
+          code: event.code,
+          wasClean: event.wasClean,
+          reason: event.reason || null,
+        })
         socket = null
         if (idleTimer) clearTimeout(idleTimer)
         idleTimer = null
@@ -424,7 +474,8 @@ export const useCodexRealtime = () => {
       const normalized = normalizeApiError(error)
       if (normalized.statusCode === 401) {
         if (await recoverAuthentication()) {
-          if (isCurrent(generation)) void connect()
+          if (isCurrent(generation))
+            reconnectAfterAttemptGeneration = generation
           return
         }
         authStore.clearSession()
@@ -445,13 +496,32 @@ export const useCodexRealtime = () => {
     }
   }
 
+  const connect = (): Promise<void> => {
+    if (manuallyClosed) return Promise.resolve()
+    if (connectInFlight) return connectInFlight
+    const attempt = connectAttempt()
+    const settled = attempt.finally(() => {
+      // Compare against the promise returned by finally; comparing with the
+      // original attempt leaves the completed promise cached forever.
+      if (connectInFlight !== settled) return
+      connectInFlight = null
+      if (
+        reconnectAfterAttemptGeneration === controllerGeneration &&
+        !manuallyClosed &&
+        !socket
+      ) {
+        reconnectAfterAttemptGeneration = null
+        void connect()
+      }
+    })
+    connectInFlight = settled
+    return settled
+  }
+
   const disconnect = (): void => {
     manuallyClosed = true
-    controllerGeneration += 1
-    clearTimers()
-    clearProjectionQueue()
-    socket?.close(NORMAL_CLOSE_CODE, 'Codex页面已离开。')
-    socket = null
+    const previousSocket = invalidateConnectionAttempt()
+    previousSocket?.close(NORMAL_CLOSE_CODE, 'Codex页面已离开。')
     realtimeStore.clearRealtime()
     approvalsStore.clear()
   }
@@ -465,10 +535,8 @@ export const useCodexRealtime = () => {
     void connect()
   }
   const handleOffline = (): void => {
-    controllerGeneration += 1
-    clearProjectionQueue()
-    socket?.close(OFFLINE_CLOSE_CODE, '浏览器已离线。')
-    socket = null
+    const previousSocket = invalidateConnectionAttempt()
+    previousSocket?.close(OFFLINE_CLOSE_CODE, '浏览器已离线。')
     realtimeStore.markOffline()
   }
   const handleVisibilityChange = (): void => {
@@ -487,11 +555,7 @@ export const useCodexRealtime = () => {
    */
   const handleNetworkInformationChange = (): void => {
     if (!navigator.onLine) return
-    const previousSocket = socket
-    controllerGeneration += 1
-    clearTimers()
-    clearProjectionQueue()
-    socket = null
+    const previousSocket = invalidateConnectionAttempt()
     previousSocket?.close(
       OFFLINE_CLOSE_CODE,
       '浏览器网络状态已变化，正在重新建立Codex实时连接。',
@@ -505,6 +569,7 @@ export const useCodexRealtime = () => {
   }
 
   onMounted(() => {
+    manuallyClosed = false
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
     document.addEventListener('visibilitychange', handleVisibilityChange)

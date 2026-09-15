@@ -50,7 +50,7 @@
       >
         发送第一条消息，Codex 会在所选电脑和项目中开始工作。
       </p>
-      <CodexWorkingIndicator v-if="working" />
+      <CodexWorkingIndicator v-if="working" :label="workingLabel" />
       <div ref="bottomSentinel" class="h-px w-full" aria-hidden="true" />
     </div>
     <button
@@ -79,8 +79,13 @@ const props = withDefaults(
     confirmationRequiredOperationIds?: readonly string[]
     threadId: string
     working?: boolean
+    workingLabel?: string
   }>(),
-  { confirmationRequiredOperationIds: () => [], working: false },
+  {
+    confirmationRequiredOperationIds: () => [],
+    working: false,
+    workingLabel: '正在处理',
+  },
 )
 defineEmits<{
   'open-context': [itemId: string, kind: CodexTimelineItemKind]

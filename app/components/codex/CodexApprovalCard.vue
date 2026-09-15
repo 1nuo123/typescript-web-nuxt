@@ -45,10 +45,18 @@
       >
         <dt class="text-ink-muted">文件变更</dt>
         <dd class="m-0 min-w-0 break-all">
-          {{ change.path }} · {{ change.change_kind }}
+          {{ change.path }} · {{ fileChangeLabel(change.change_kind) }}
           <BaseBadge v-if="change.sensitive" tone="warning" class="ml-1">
             敏感路径
           </BaseBadge>
+          <pre
+            v-if="change.diff !== null && change.diff !== undefined"
+            class="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all border-l-2 border-line pl-2 text-xs leading-5"
+            >{{ change.diff }}</pre
+          >
+          <span v-if="change.truncated" class="mt-1 block text-ink-muted"
+            >内容已截断</span
+          >
         </dd>
       </div>
       <div
@@ -77,16 +85,17 @@
     />
     <footer class="flex flex-wrap items-center justify-end gap-2">
       <span
-        v-if="decisionAcknowledged"
-        class="mr-auto text-xs text-accent"
+        v-if="approvalStateMessage"
+        class="mr-auto text-xs"
+        :class="approvalStateTone"
         role="status"
         aria-live="polite"
         aria-atomic="true"
       >
-        已提交，等待 Agent 应用结果
+        {{ approvalStateMessage }}
       </span>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.Decline)"
+        v-if="canDecide && allows(CodexApprovalDecision.Decline)"
         size="sm"
         variant="secondary"
         :disabled="submitting"
@@ -95,7 +104,7 @@
         拒绝
       </BaseButton>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.Cancel)"
+        v-if="canDecide && allows(CodexApprovalDecision.Cancel)"
         size="sm"
         variant="secondary"
         :disabled="submitting"
@@ -104,7 +113,7 @@
         终止
       </BaseButton>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.Accept)"
+        v-if="canDecide && allows(CodexApprovalDecision.Accept)"
         size="sm"
         :disabled="submitting || !canGrant"
         :title="canGrant ? undefined : '当前账号缺少接受该请求所需的权限'"
@@ -117,7 +126,7 @@
         }}
       </BaseButton>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.AcceptForSession)"
+        v-if="canDecide && allows(CodexApprovalDecision.AcceptForSession)"
         size="sm"
         variant="secondary"
         :disabled="submitting || !canGrant"
@@ -127,7 +136,10 @@
         本会话允许
       </BaseButton>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.AcceptWithExecpolicyAmendment)"
+        v-if="
+          canDecide &&
+          allows(CodexApprovalDecision.AcceptWithExecpolicyAmendment)
+        "
         size="sm"
         variant="secondary"
         :disabled="submitting || !canGrant"
@@ -139,7 +151,9 @@
         应用命令策略
       </BaseButton>
       <BaseButton
-        v-if="allows(CodexApprovalDecision.ApplyNetworkPolicyAmendment)"
+        v-if="
+          canDecide && allows(CodexApprovalDecision.ApplyNetworkPolicyAmendment)
+        "
         size="sm"
         variant="secondary"
         :disabled="submitting || !canGrant"
@@ -186,6 +200,7 @@ import {
   CodexApprovalDecisionState,
   CodexApprovalKind,
   CodexApprovalRiskLevel,
+  CodexApprovalState,
   type CodexApproval,
 } from '~/types/codex-approval'
 import { AuthScope, AuthStepUpPurpose } from '~/types/auth'
@@ -197,7 +212,16 @@ const APPROVAL_ACTION_LABELS: Readonly<Record<string, string>> = {
   unknown: '执行命令',
 }
 
+const FILE_CHANGE_LABELS: Readonly<Record<string, string>> = {
+  added: '新建',
+  modified: '修改',
+  deleted: '删除',
+  renamed: '重命名',
+}
+
 const props = defineProps<{ approval: CodexApproval }>()
+const fileChangeLabel = (kind: string): string =>
+  FILE_CHANGE_LABELS[kind] ?? kind
 const approvalStore = useCodexApprovalsStore()
 const authStore = useAuthStore()
 const stepUpOpen = ref(false)
@@ -216,6 +240,9 @@ const submitting = computed(
 )
 const decisionAcknowledged = computed(
   () => decisionState.value === CodexApprovalDecisionState.Acknowledged,
+)
+const canDecide = computed(
+  () => props.approval.state === CodexApprovalState.Pending,
 )
 const decisionError = computed(
   () => approvalStore.decisionErrorById[props.approval.approval_id] ?? '',
@@ -271,6 +298,31 @@ const actionLabel = (actionType: string): string =>
 
 const allows = (decision: CodexApprovalDecision): boolean =>
   props.approval.display_summary.allowed_actions.includes(decision)
+
+const approvalStateMessage = computed(() => {
+  switch (props.approval.state) {
+    case CodexApprovalState.Claimed:
+      return '审批结果已提交，正在等待 Agent 确认应用。'
+    case CodexApprovalState.DeliveryFailed:
+      return '审批结果交付失败，请保持当前页面并在审批中心核对。'
+    case CodexApprovalState.Applied:
+      return 'Agent 已确认审批结果；文件是否成功以工具结果为准。'
+    case CodexApprovalState.Expired:
+      return '审批已过期。'
+    case CodexApprovalState.Cancelled:
+      return '审批已取消交付。'
+    case CodexApprovalState.Pending:
+      return decisionAcknowledged.value ? '审批结果正在提交。' : ''
+  }
+})
+
+const approvalStateTone = computed(() =>
+  props.approval.state === CodexApprovalState.DeliveryFailed
+    ? 'text-danger'
+    : props.approval.state === CodexApprovalState.Claimed
+      ? 'text-warning'
+      : 'text-accent',
+)
 
 const submitDecision = (decision: CodexApprovalDecision): void => {
   void approvalStore.decide(props.approval, decision).catch(() => undefined)

@@ -20,7 +20,9 @@
           · {{ sessionStore.selectedHost.display_name }}</span
         >
         <span> · {{ statusLabel }}</span>
-        <span v-if="showModel"> · {{ thread?.model }}</span>
+        <span v-if="effectiveExecutionLabel">
+          · {{ effectiveExecutionLabel }}
+        </span>
       </p>
     </div>
 
@@ -126,6 +128,7 @@ import {
   Settings2,
 } from '@lucide/vue'
 import { CodexThreadStatus } from '~/types/codex-thread'
+import { CodexTurnPhase } from '~/types/codex-turn'
 import {
   buildCodexExecutionSettingsRoute,
   buildCodexTasksRoute,
@@ -168,12 +171,18 @@ const pendingCount = computed(() =>
     ? approvalStore.pendingForThread(thread.value.upstream_thread_id).length
     : 0,
 )
-const showModel = computed(() => {
+const effectiveExecutionLabel = computed(() => {
   const model = thread.value?.model
-  const defaultModel = sessionStore.selectedHost?.capabilities.model_ids[0]
-  return Boolean(model && model !== defaultModel)
+  const effort = thread.value?.reasoning_effort
+  if (!model && !effort) return ''
+  return [model, effort].filter(Boolean).join(' · ')
 })
 const statusLabel = computed(() => {
+  const phase = thread.value?.turn_runtime?.phase
+  if (phase === CodexTurnPhase.AwaitingApproval) return '等待审批'
+  if (phase === CodexTurnPhase.Stalled) return '状态待确认'
+  if (phase === CodexTurnPhase.Starting) return '正在准备'
+  if (phase === CodexTurnPhase.Running) return '正在执行'
   const labels: Readonly<Record<CodexThreadStatus, string>> = {
     [CodexThreadStatus.Idle]: '空闲',
     [CodexThreadStatus.Active]: '运行中',

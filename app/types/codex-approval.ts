@@ -43,6 +43,8 @@ export interface CodexApprovalCommandAction {
 }
 
 export interface CodexApprovalFileChange {
+  diff?: string | null
+  truncated?: boolean
   path: string
   change_kind: string
   added_lines: number | null

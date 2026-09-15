@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import type { ApiErrorPayload } from '~/types/api'
 import {
   CodexApprovalPolicy,
+  CodexHostStatus,
   CodexSandboxMode,
   type CodexHost,
 } from '~/types/codex-host'
@@ -77,6 +78,7 @@ let workspacesLoadInFlight: CodexInFlightLoad | null = null
 let threadsLoadInFlight: CodexInFlightLoad | null = null
 let authorityRefreshInFlight: CodexInFlightLoad | null = null
 let historyLoadInFlight: CodexInFlightLoad | null = null
+let snapshotLoadInFlight: CodexInFlightLoad | null = null
 let sessionLoadGeneration = 0
 
 interface CodexSessionStoreState {
@@ -99,7 +101,9 @@ interface CodexSessionStoreState {
   threadNextCursor: string | null
   threadLoadRequestId: number
   snapshotRecoveryInFlight: boolean
+  snapshotRecoveryKey: string | null
   snapshotReplayBuffer: CodexRealtimeEvent[]
+  snapshotReplayBaselineTextByItemId: Record<string, string>
   snapshotRecoveryGeneration: number
 }
 
@@ -129,6 +133,12 @@ const buildThreadStartRequestKey = (
   workspaceId: string,
   execution: CodexExecutionOptions,
 ): string => JSON.stringify(['thread.start', hostId, workspaceId, execution])
+
+const buildSnapshotRecoveryKey = (
+  generation: number,
+  hostId: string,
+  threadId: string,
+): string => JSON.stringify([generation, hostId, threadId])
 
 const DEFAULT_CODEX_EXECUTION_OPTIONS: CodexExecutionOptions = {
   model: null,
@@ -173,6 +183,44 @@ const toCodexExecutionOptions = (
       }
     : { ...DEFAULT_CODEX_EXECUTION_OPTIONS }
 
+/**
+ * A snapshot has no proven stream cursor boundary. Suppress only a buffered
+ * text delta that is already the suffix of the same full item returned by
+ * this snapshot; all other events remain replayed so an uncertain boundary
+ * cannot silently discard new content.
+ */
+const isSnapshotCoveredItemDelta = (
+  projection: CodexSessionProjection,
+  snapshotItemIds: ReadonlySet<string>,
+  baselineTextByItemId: Readonly<Record<string, string>>,
+  event: CodexRealtimeEvent,
+): boolean => {
+  if (
+    event.detail.kind !== CodexRealtimeEventType.ItemDelta ||
+    !snapshotItemIds.has(event.detail.item_id)
+  ) {
+    return false
+  }
+  const item = projection.itemsById[event.detail.item_id]
+  const baselineText = baselineTextByItemId[event.detail.item_id]
+  return (
+    item?.detail.kind === CodexTimelineItemKind.AgentMessage &&
+    !baselineText?.endsWith(event.detail.delta) &&
+    item.detail.text.endsWith(event.detail.delta)
+  )
+}
+
+const captureAgentMessageTexts = (
+  projection: CodexSessionProjection,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.values(projection.itemsById).flatMap((item) =>
+      item.detail.kind === CodexTimelineItemKind.AgentMessage
+        ? [[item.header.item_id, item.detail.text]]
+        : [],
+    ),
+  )
+
 export const useCodexSessionStore = defineStore('codex-session', {
   state: (): CodexSessionStoreState => ({
     projection: createCodexSessionProjection(),
@@ -194,7 +242,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
     threadNextCursor: null,
     threadLoadRequestId: 0,
     snapshotRecoveryInFlight: false,
+    snapshotRecoveryKey: null,
     snapshotReplayBuffer: [],
+    snapshotReplayBaselineTextByItemId: {},
     snapshotRecoveryGeneration: 0,
   }),
   getters: {
@@ -277,6 +327,21 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
   },
   actions: {
+    invalidateSnapshotRecovery(): void {
+      this.snapshotRecoveryGeneration += 1
+      this.snapshotRecoveryInFlight = false
+      this.snapshotRecoveryKey = null
+      this.snapshotReplayBuffer = []
+      this.snapshotReplayBaselineTextByItemId = {}
+      snapshotLoadInFlight = null
+    },
+
+    invalidateResumedThreadsForHost(hostId: string): void {
+      this.resumedThreadIds = this.resumedThreadIds.filter(
+        (threadId) => this.projection.threadsById[threadId]?.host_id !== hostId,
+      )
+    },
+
     async loadHosts(): Promise<void> {
       if (hostsLoadInFlight) return hostsLoadInFlight
       const generation = sessionLoadGeneration
@@ -285,6 +350,15 @@ export const useCodexSessionStore = defineStore('codex-session', {
       const request = (async (): Promise<void> => {
         const collection = await createCodexHostsClient().list()
         if (generation !== sessionLoadGeneration) return
+        for (const host of collection.items) {
+          const previous = this.projection.hostsById[host.host_id]
+          if (
+            previous?.capabilities.app_server_instance_id !==
+            host.capabilities.app_server_instance_id
+          ) {
+            this.invalidateResumedThreadsForHost(host.host_id)
+          }
+        }
         this.projection = replaceCodexHosts(this.projection, collection.items)
         this.reconcileSelections()
       })()
@@ -303,6 +377,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async selectHost(hostId: string): Promise<void> {
+      if (this.selectedHostId !== hostId) this.invalidateSnapshotRecovery()
       const preservedWorkspaceId =
         this.selectedHostId === hostId ? this.selectedWorkspaceId : null
       this.selectedHostId = hostId
@@ -502,6 +577,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async setArchivedThreadsVisible(visible: boolean): Promise<void> {
+      this.invalidateSnapshotRecovery()
       this.showArchivedThreads = visible
       this.selectedThreadId = null
       await this.loadThreads(this.selectedWorkspaceId)
@@ -573,6 +649,10 @@ export const useCodexSessionStore = defineStore('codex-session', {
 
     restoreWorkspace(workspaceId: string): boolean {
       const workspace = this.projection.workspacesById[workspaceId]
+      const selectionWillChange =
+        this.selectedWorkspaceId !== workspaceId ||
+        this.selectedThread?.workspace_id !== workspaceId
+      if (selectionWillChange) this.invalidateSnapshotRecovery()
       if (!workspace || workspace.host_id !== this.selectedHostId) {
         this.selectedWorkspaceId = null
         this.selectedThreadId = null
@@ -598,6 +678,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     selectThread(threadId: string): void {
+      if (this.selectedThreadId !== threadId) this.invalidateSnapshotRecovery()
       this.selectedThreadId = threadId
       const thread = this.projection.threadsById[threadId]
       if (thread) {
@@ -607,6 +688,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     restoreThread(threadId: string, expectedWorkspaceId?: string): boolean {
+      if (this.selectedThreadId !== threadId) this.invalidateSnapshotRecovery()
       const thread = this.projection.threadsById[threadId]
       if (!thread) {
         this.selectedThreadId = null
@@ -627,6 +709,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async restoreRouteSelection(route: CodexTaskRoute): Promise<boolean> {
+      this.invalidateSnapshotRecovery()
       this.selectionError = null
       this.workspaceSelectionState = WorkspaceSelectionState.Loading
       await this.loadHosts()
@@ -719,54 +802,99 @@ export const useCodexSessionStore = defineStore('codex-session', {
 
     async loadThreadSnapshot(): Promise<void> {
       if (!this.selectedHostId || !this.selectedThreadId) return
+      const hostId = this.selectedHostId
+      const threadId = this.selectedThreadId
+      const generation = sessionLoadGeneration
+      const requestKey = buildSnapshotRecoveryKey(generation, hostId, threadId)
+      if (snapshotLoadInFlight?.key === requestKey) {
+        return snapshotLoadInFlight.promise
+      }
       const recoveryGeneration = this.snapshotRecoveryGeneration + 1
       this.snapshotRecoveryGeneration = recoveryGeneration
       this.snapshotRecoveryInFlight = true
+      this.snapshotRecoveryKey = requestKey
       this.snapshotReplayBuffer = []
-      try {
-        const snapshot = await createCodexThreadsClient().read(
-          this.selectedHostId,
-          this.selectedThreadId,
-        )
-        if (recoveryGeneration !== this.snapshotRecoveryGeneration) return
-        const snapshotEvent = validateCodexRealtimeEvent({
-          header: {
-            kind: 'codex_realtime_event',
-            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-            stream_epoch: CODEX_REALTIME_STREAM_EPOCH,
-            cursor: null,
-            event_id: `snapshot-${this.selectedThreadId}-${Date.now()}`,
-            occurred_at: new Date().toISOString(),
-            host_id: this.selectedHostId,
-            workspace_id: snapshot.thread.workspace_id,
-            thread_id: this.selectedThreadId,
-            turn_id: null,
-            item_id: null,
-            detail_kind: CodexRealtimeEventType.ThreadSnapshot,
-          },
-          detail: {
-            kind: CodexRealtimeEventType.ThreadSnapshot,
-            schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-            ...snapshot,
-          },
-        })
-        this.snapshotRecoveryInFlight = false
-        const replay = this.snapshotReplayBuffer
-        this.snapshotReplayBuffer = []
-        this.applyRealtimeEvent(snapshotEvent, { bypassSnapshotRecovery: true })
-        this.applyRealtimeBatch(replay, { bypassSnapshotRecovery: true })
-      } catch (error) {
-        if (recoveryGeneration === this.snapshotRecoveryGeneration) {
+      this.snapshotReplayBaselineTextByItemId = captureAgentMessageTexts(
+        this.projection,
+      )
+      const isCurrentRecovery = (): boolean =>
+        generation === sessionLoadGeneration &&
+        recoveryGeneration === this.snapshotRecoveryGeneration &&
+        this.snapshotRecoveryKey === requestKey &&
+        this.selectedHostId === hostId &&
+        this.selectedThreadId === threadId
+      const request = (async (): Promise<void> => {
+        try {
+          const snapshot = await createCodexThreadsClient().read(
+            hostId,
+            threadId,
+          )
+          if (!isCurrentRecovery()) return
+          const snapshotEvent = validateCodexRealtimeEvent({
+            header: {
+              kind: 'codex_realtime_event',
+              schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+              stream_epoch: CODEX_REALTIME_STREAM_EPOCH,
+              cursor: null,
+              event_id: `snapshot-${threadId}-${Date.now()}`,
+              occurred_at: new Date().toISOString(),
+              host_id: hostId,
+              workspace_id: snapshot.thread.workspace_id,
+              thread_id: threadId,
+              turn_id: null,
+              item_id: null,
+              detail_kind: CodexRealtimeEventType.ThreadSnapshot,
+            },
+            detail: {
+              kind: CodexRealtimeEventType.ThreadSnapshot,
+              schema_version: CODEX_REALTIME_SCHEMA_VERSION,
+              ...snapshot,
+            },
+          })
           this.snapshotRecoveryInFlight = false
           const replay = this.snapshotReplayBuffer
           this.snapshotReplayBuffer = []
-          this.applyRealtimeBatch(replay, { bypassSnapshotRecovery: true })
+          this.applyRealtimeEvent(snapshotEvent, {
+            bypassSnapshotRecovery: true,
+          })
+          const snapshotItemIds = new Set(
+            snapshot.items.map((item) => item.header.item_id),
+          )
+          this.applyRealtimeBatch(
+            replay.filter(
+              (event) =>
+                !isSnapshotCoveredItemDelta(
+                  this.projection,
+                  snapshotItemIds,
+                  this.snapshotReplayBaselineTextByItemId,
+                  event,
+                ),
+            ),
+            { bypassSnapshotRecovery: true },
+          )
+        } catch (error) {
+          if (isCurrentRecovery()) {
+            this.snapshotRecoveryInFlight = false
+            const replay = this.snapshotReplayBuffer
+            this.snapshotReplayBuffer = []
+            this.applyRealtimeBatch(replay, { bypassSnapshotRecovery: true })
+          }
+          throw error
+        } finally {
+          if (isCurrentRecovery()) {
+            this.snapshotRecoveryInFlight = false
+            this.snapshotRecoveryKey = null
+            this.snapshotReplayBuffer = []
+            this.snapshotReplayBaselineTextByItemId = {}
+          }
         }
-        throw error
+      })()
+      snapshotLoadInFlight = { key: requestKey, promise: request }
+      try {
+        await request
       } finally {
-        if (recoveryGeneration === this.snapshotRecoveryGeneration) {
-          this.snapshotRecoveryInFlight = false
-          this.snapshotReplayBuffer = []
+        if (snapshotLoadInFlight?.promise === request) {
+          snapshotLoadInFlight = null
         }
       }
     },
@@ -906,6 +1034,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
       submission: FailedCodexTurnSubmission,
       workspaceId: string | null,
     ): Promise<CodexOperationAccepted> {
+      let accepted: CodexOperationAccepted
       try {
         if (!submission.activeTurn) await this.ensureThreadReady()
         const request = {
@@ -914,7 +1043,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
           execution: submission.execution,
         }
         const client = createCodexThreadsClient()
-        const accepted = submission.activeTurn
+        accepted = submission.activeTurn
           ? await client.steer(submission.hostId, submission.threadId, request)
           : await client.startTurn(
               submission.hostId,
@@ -930,8 +1059,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
           this.confirmationRequiredOperationIds.filter(
             (operationId) => operationId !== submission.clientOperationId,
           )
-        await this.loadThreads(workspaceId)
-        return accepted
       } catch (error) {
         this.failedTurnByOperationId[submission.clientOperationId] = submission
         if (isCodexTurnSubmissionTimeout(error)) {
@@ -953,6 +1080,16 @@ export const useCodexSessionStore = defineStore('codex-session', {
         this.markOptimisticUserMessageFailed(submission.clientOperationId)
         throw error
       }
+
+      // The command is already accepted at this point. A best-effort index
+      // refresh must not turn an accepted send into a failed optimistic item
+      // or invite the user to submit the same operation again.
+      try {
+        await this.loadThreads(workspaceId)
+      } catch (error) {
+        this.lastError = error as ApiErrorPayload
+      }
+      return accepted
     },
 
     async interruptTurn(): Promise<CodexOperationAccepted> {
@@ -992,26 +1129,40 @@ export const useCodexSessionStore = defineStore('codex-session', {
      * 防止 stalled 提示和连接恢复同时读取时交错覆盖快照或扩大 Agent 读取负载。
      */
     async refreshAuthority(): Promise<void> {
+      const generation = sessionLoadGeneration
+      const hostId = this.selectedHostId
+      const workspaceId = this.selectedWorkspaceId
+      const threadId = this.selectedThreadId
       const requestKey = [
-        sessionLoadGeneration,
-        this.selectedHostId ?? '',
-        this.selectedWorkspaceId ?? '',
-        this.selectedThreadId ?? '',
+        generation,
+        hostId ?? '',
+        workspaceId ?? '',
+        threadId ?? '',
       ].join(':')
       if (authorityRefreshInFlight?.key === requestKey)
         return authorityRefreshInFlight.promise
 
+      const isCurrentSelection = (): boolean =>
+        generation === sessionLoadGeneration &&
+        this.selectedHostId === hostId &&
+        this.selectedWorkspaceId === workspaceId &&
+        this.selectedThreadId === threadId
+
       const request = (async (): Promise<void> => {
         await this.loadHosts()
-        if (this.selectedHostId) {
+        if (!isCurrentSelection()) return
+        if (hostId) {
           await Promise.all([this.loadWorkspaces(), this.loadThreads()])
+          if (!isCurrentSelection()) return
           this.resetExecutionOptions()
         }
-        if (!this.selectedThreadId) return
+        if (!threadId) return
         let lastError: unknown
         for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (!isCurrentSelection()) return
           try {
             await this.loadThreadSnapshot()
+            if (!isCurrentSelection()) return
             return
           } catch (error) {
             lastError = error
@@ -1047,7 +1198,19 @@ export const useCodexSessionStore = defineStore('codex-session', {
       events: readonly CodexRealtimeEvent[],
       options: { bypassSnapshotRecovery?: boolean } = {},
     ): void {
-      if (this.snapshotRecoveryInFlight && !options.bypassSnapshotRecovery) {
+      const snapshotRecoveryKey =
+        this.selectedHostId && this.selectedThreadId
+          ? buildSnapshotRecoveryKey(
+              sessionLoadGeneration,
+              this.selectedHostId,
+              this.selectedThreadId,
+            )
+          : null
+      if (
+        this.snapshotRecoveryInFlight &&
+        this.snapshotRecoveryKey === snapshotRecoveryKey &&
+        !options.bypassSnapshotRecovery
+      ) {
         this.snapshotReplayBuffer.push(...events)
         return
       }
@@ -1058,12 +1221,17 @@ export const useCodexSessionStore = defineStore('codex-session', {
           selectionsNeedReconciliation = true
         }
         if (
+          event.detail.kind === CodexRealtimeEventType.HostStatusChanged &&
+          event.detail.status !== CodexHostStatus.Online
+        ) {
+          this.invalidateResumedThreadsForHost(event.detail.host_id)
+        }
+        if (
           event.header.thread_id &&
           (event.detail.kind === CodexRealtimeEventType.TurnStarted ||
             event.detail.kind === CodexRealtimeEventType.TurnCompleted ||
             event.detail.kind === CodexRealtimeEventType.TurnFailed ||
-            event.detail.kind === CodexRealtimeEventType.TurnInterrupted ||
-            event.detail.kind === CodexRealtimeEventType.ItemUpsert)
+            event.detail.kind === CodexRealtimeEventType.TurnInterrupted)
         ) {
           resolvedThreadIds.add(event.header.thread_id)
         }
@@ -1199,6 +1367,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
       threadsLoadInFlight = null
       authorityRefreshInFlight = null
       historyLoadInFlight = null
+      snapshotLoadInFlight = null
       this.projection = createCodexSessionProjection()
       this.selectedHostId = null
       this.selectedWorkspaceId = null
@@ -1215,7 +1384,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
       this.threadNextCursor = null
       this.threadLoadRequestId = 0
       this.snapshotRecoveryInFlight = false
+      this.snapshotRecoveryKey = null
       this.snapshotReplayBuffer = []
+      this.snapshotReplayBaselineTextByItemId = {}
       this.snapshotRecoveryGeneration += 1
     },
 

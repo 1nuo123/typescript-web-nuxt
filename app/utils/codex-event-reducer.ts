@@ -848,15 +848,29 @@ export const reduceCodexRealtimeEvent = (
       const turn = detail.turn
       const thread = activityState.threadsById[turn.thread_id]
       const isStarted = detail.kind === CodexRealtimeEventType.TurnStarted
+      const isCurrentTurn =
+        !thread?.active_turn_id || thread.active_turn_id === turn.turn_id
+      const terminalStatus =
+        detail.kind === CodexRealtimeEventType.TurnFailed
+          ? CodexThreadStatus.Failed
+          : detail.kind === CodexRealtimeEventType.TurnInterrupted
+            ? CodexThreadStatus.Interrupted
+            : CodexThreadStatus.Idle
       const nextThread = thread
         ? {
             ...thread,
-            active_turn_id: isStarted ? turn.turn_id : null,
+            // A late terminal event from an older turn must not clear the
+            // currently active turn or regress its status.
+            active_turn_id: isStarted
+              ? turn.turn_id
+              : isCurrentTurn
+                ? null
+                : thread.active_turn_id,
             status: isStarted
               ? CodexThreadStatus.Active
-              : detail.kind === CodexRealtimeEventType.TurnInterrupted
-                ? CodexThreadStatus.Interrupted
-                : CodexThreadStatus.Idle,
+              : isCurrentTurn
+                ? terminalStatus
+                : thread.status,
           }
         : null
       const terminalFailed =
