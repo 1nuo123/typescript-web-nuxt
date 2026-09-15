@@ -23,6 +23,8 @@ export default defineConfig<ConfigOptions>({
         env: {
           NUXT_E2E: 'true',
           NUXT_IGNORE_LOCK: '1',
+          NUXT_PUBLIC_CODEX_FEATURE_ENABLED:
+            process.env.NUXT_TEST_CODEX_FEATURE_ENABLED ?? 'false',
         },
         reuseExistingServer: false,
         timeout: 120000,
