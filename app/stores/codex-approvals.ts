@@ -146,7 +146,6 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
             ...current,
             state: CodexApprovalState.Claimed,
             decision,
-            updated_at: new Date().toISOString(),
           }
         }
         this.decisionStateById[approvalId] =
