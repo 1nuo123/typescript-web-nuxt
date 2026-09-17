@@ -30,6 +30,7 @@ import {
   CODEX_TIMELINE_TEXT_LIMIT,
   truncateCodexContent,
 } from './codex-content'
+import { getFullyCoveredTerminalTurnIds } from './codex-snapshot-coverage'
 
 export interface CodexSessionProjection {
   hostsById: Record<string, CodexHost>
@@ -329,6 +330,83 @@ const upsertItem = (
       [threadId]: nextIndex ?? {},
     },
     itemSourceById: nextItemSourceById,
+  }
+}
+
+/**
+ * A complete history page is authoritative only for terminal turns whose
+ * entire item group it contains. Live and history item identifiers can differ,
+ * so replace those groups by turn authority rather than guessing a message
+ * correspondence from content or position.
+ */
+const replaceFullyCoveredSnapshotTurns = (
+  state: CodexSessionProjection,
+  threadId: string,
+  snapshotItems: readonly CodexTimelineItem[],
+  fullyCoveredTurnIds: ReadonlySet<string>,
+): CodexSessionProjection => {
+  if (!fullyCoveredTurnIds.size) return state
+
+  const snapshotItemIds = snapshotItems
+    .filter((item) => item.header.thread_id === threadId)
+    .map((item) => item.header.item_id)
+  const snapshotIds = new Set(snapshotItemIds)
+  const replacesItem = (itemId: string): boolean => {
+    const item = state.itemsById[itemId]
+    return (
+      snapshotIds.has(itemId) ||
+      (item?.header.thread_id === threadId &&
+        item.header.turn_id !== null &&
+        fullyCoveredTurnIds.has(item.header.turn_id))
+    )
+  }
+  const nextOrderedIds: string[] = []
+  let insertedSnapshot = false
+  for (const itemId of state.orderedItemIdsByThread[threadId] ?? []) {
+    if (!replacesItem(itemId)) {
+      nextOrderedIds.push(itemId)
+      continue
+    }
+    if (!insertedSnapshot) {
+      // Keep the whole page in authority order, including partial/active turns.
+      // Only covered terminal turns lose items absent from the page.
+      nextOrderedIds.push(...snapshotItemIds)
+      insertedSnapshot = true
+    }
+  }
+
+  const itemsById = Object.fromEntries(
+    Object.entries(state.itemsById).filter(
+      ([itemId]) => !replacesItem(itemId) || snapshotIds.has(itemId),
+    ),
+  ) as Record<string, CodexTimelineRenderableItem>
+  const itemSourceById = Object.fromEntries(
+    Object.entries(state.itemSourceById).filter(([itemId]) =>
+      Object.hasOwn(itemsById, itemId),
+    ),
+  ) as Record<string, CodexTimelineItemSource>
+  const timeline = nextOrderedIds.flatMap((itemId) => {
+    const item = itemsById[itemId]
+    return item ? [item] : []
+  })
+  return {
+    ...state,
+    itemsById,
+    itemSourceById,
+    orderedItemIdsByThread: {
+      ...state.orderedItemIdsByThread,
+      [threadId]: nextOrderedIds,
+    },
+    timelineItemsByThread: {
+      ...state.timelineItemsByThread,
+      [threadId]: freezeTimelineItems(timeline),
+    },
+    timelineItemIndexByThread: {
+      ...state.timelineItemIndexByThread,
+      [threadId]: Object.fromEntries(
+        timeline.map((item, index) => [item.header.item_id, index]),
+      ),
+    },
   }
 }
 
@@ -804,6 +882,7 @@ export const reduceCodexRealtimeEvent = (
           [threadId]: detail.history_revision,
         },
       }
+      const fullyCoveredTerminalTurnIds = getFullyCoveredTerminalTurnIds(detail)
       let nextState: CodexSessionProjection = {
         ...snapshotMetadata,
         turnsById: {
@@ -812,20 +891,22 @@ export const reduceCodexRealtimeEvent = (
             detail.turns.map((turn) => [turn.turn_id, turn]),
           ),
         },
-        // 快照未携带官方 clientUserMessageId 时不能借正文猜测确认关系。
-        itemsById: state.itemsById,
-        itemSourceById: state.itemSourceById,
-        orderedItemIdsByThread: {
-          ...state.orderedItemIdsByThread,
-          [threadId]: state.orderedItemIdsByThread[threadId] ?? [],
-        },
       }
-      for (const item of detail.items)
+      // Use the ordinary upsert path first so official client_operation_id
+      // acknowledgements also reconcile optimistic messages without a turn ID.
+      for (const item of detail.items) {
         nextState = upsertItem(
           nextState,
           item,
           CodexTimelineItemSource.Snapshot,
         )
+      }
+      nextState = replaceFullyCoveredSnapshotTurns(
+        nextState,
+        threadId,
+        detail.items,
+        fullyCoveredTerminalTurnIds,
+      )
       return nextState
     }
     case CodexRealtimeEventType.ThreadUpdated: {

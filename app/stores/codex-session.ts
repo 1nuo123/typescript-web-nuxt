@@ -49,6 +49,7 @@ import {
   upsertCodexTimelineItem,
   type CodexSessionProjection,
 } from '~/utils/codex-event-reducer'
+import { getFullyCoveredTerminalTurnIds } from '~/utils/codex-snapshot-coverage'
 import { validateCodexRealtimeEvent } from '~/utils/codex-event-validator'
 import { getCodexRealtimeWriteBlockReason } from '~/utils/codex-realtime-write-guard'
 
@@ -208,6 +209,32 @@ const isSnapshotCoveredItemDelta = (
     !baselineText?.endsWith(event.detail.delta) &&
     item.detail.text.endsWith(event.detail.delta)
   )
+}
+
+const isReplayForFullyCoveredTerminalTurn = (
+  fullyCoveredTerminalTurnIds: ReadonlySet<string>,
+  event: CodexRealtimeEvent,
+): boolean => {
+  let turnId: string | null
+  switch (event.detail.kind) {
+    case CodexRealtimeEventType.TurnStarted:
+    case CodexRealtimeEventType.TurnCompleted:
+    case CodexRealtimeEventType.TurnFailed:
+    case CodexRealtimeEventType.TurnInterrupted:
+      turnId = event.detail.turn.turn_id
+      break
+    case CodexRealtimeEventType.ItemUpsert:
+      turnId = event.detail.item.header.turn_id
+      break
+    case CodexRealtimeEventType.TurnPlanUpdated:
+    case CodexRealtimeEventType.TurnDiffUpdated:
+    case CodexRealtimeEventType.ItemDelta:
+      turnId = event.detail.turn_id
+      break
+    default:
+      return false
+  }
+  return turnId !== null && fullyCoveredTerminalTurnIds.has(turnId)
 }
 
 const captureAgentMessageTexts = (
@@ -811,12 +838,14 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
       const recoveryGeneration = this.snapshotRecoveryGeneration + 1
       this.snapshotRecoveryGeneration = recoveryGeneration
-      this.snapshotRecoveryInFlight = true
       this.snapshotRecoveryKey = requestKey
       this.snapshotReplayBuffer = []
       this.snapshotReplayBaselineTextByItemId = captureAgentMessageTexts(
         this.projection,
       )
+      // The realtime controller may synchronously flush its pending frame into
+      // this buffer when recovery starts. Initialize the buffer first.
+      this.snapshotRecoveryInFlight = true
       const isCurrentRecovery = (): boolean =>
         generation === sessionLoadGeneration &&
         recoveryGeneration === this.snapshotRecoveryGeneration &&
@@ -860,6 +889,8 @@ export const useCodexSessionStore = defineStore('codex-session', {
           const snapshotItemIds = new Set(
             snapshot.items.map((item) => item.header.item_id),
           )
+          const fullyCoveredTerminalTurnIds =
+            getFullyCoveredTerminalTurnIds(snapshot)
           this.applyRealtimeBatch(
             replay.filter(
               (event) =>
@@ -867,6 +898,10 @@ export const useCodexSessionStore = defineStore('codex-session', {
                   this.projection,
                   snapshotItemIds,
                   this.snapshotReplayBaselineTextByItemId,
+                  event,
+                ) &&
+                !isReplayForFullyCoveredTerminalTurn(
+                  fullyCoveredTerminalTurnIds,
                   event,
                 ),
             ),

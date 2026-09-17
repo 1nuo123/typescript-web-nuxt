@@ -178,6 +178,39 @@ const makeEvent = (eventId: string, detail: Record<string, unknown>) => ({
   detail: { schema_version: '2.0', ...detail },
 })
 
+const textTimelineItem = (
+  itemId: string,
+  turnId: string,
+  text: string,
+  kind: 'user_message' | 'agent_message' = 'agent_message',
+  clientOperationId: string | null = null,
+) => ({
+  header: {
+    item_id: itemId,
+    thread_id: 'thread-1',
+    turn_id: turnId,
+    detail_kind: kind,
+    schema_version: '1.0',
+    status: 'completed',
+    created_at: NOW,
+    client_operation_id: clientOperationId,
+  },
+  detail: {
+    kind,
+    schema_version: '1.0',
+    text,
+  },
+})
+
+const completedTurn = (turnId: string) => ({
+  turn_id: turnId,
+  thread_id: 'thread-1',
+  status: 'completed',
+  started_at: NOW,
+  completed_at: NOW,
+  error_message: null,
+})
+
 test.describe('Codex execution audit browser flow', () => {
   test.skip(
     !codexFeatureEnabled,
@@ -526,5 +559,406 @@ test.describe('Codex execution audit browser flow', () => {
       socket.close(1006, 'e2e reconnect')
     })
     await expect(page.getByText(/正在重新连接/)).toBeVisible()
+  })
+
+  test('recovers terminal timeline authority without resurrecting buffered items', async ({
+    page,
+    goto,
+  }) => {
+    let snapshotMode: 'initial' | 'complete' | 'paged' | 'omitted' = 'initial'
+    let recoverySnapshotResponses = 0
+    let releaseRecoverySnapshot: () => void = () => undefined
+    let resolveRecoverySnapshotRequest: () => void = () => undefined
+    const recoverySnapshotReleased = new Promise<void>((resolve) => {
+      releaseRecoverySnapshot = resolve
+    })
+    const recoverySnapshotRequested = new Promise<void>((resolve) => {
+      resolveRecoverySnapshotRequest = resolve
+    })
+
+    const authoritativeSnapshot = {
+      thread,
+      turns: [completedTurn('turn-1'), completedTurn('turn-2')],
+      // This is the newest whole page: history_has_more=false means both
+      // represented terminal turns are safe to replace.
+      items: [
+        textTimelineItem(
+          'snapshot-turn-1-user',
+          'turn-1',
+          'Authoritative user request',
+          'user_message',
+        ),
+        textTimelineItem(
+          'snapshot-turn-1-agent',
+          'turn-1',
+          'Shared terminal reply',
+        ),
+        textTimelineItem(
+          'snapshot-turn-2-agent',
+          'turn-2',
+          'Shared terminal reply',
+        ),
+      ],
+      history_status: 'complete',
+      history_before_cursor: null,
+      history_has_more: false,
+      history_revision: 'history-2',
+    }
+
+    await page.addInitScript(() => {
+      class DeterministicWebSocket extends EventTarget {
+        readyState = 0
+
+        constructor() {
+          super()
+          Reflect.set(window, '__codexE2eSocket', this)
+          window.setTimeout(() => {
+            this.readyState = 1
+            this.dispatchEvent(new Event('open'))
+          }, 0)
+        }
+
+        send(): void {}
+
+        close(code = 1000, reason = ''): void {
+          this.readyState = 3
+          this.dispatchEvent(
+            new CloseEvent('close', { code, reason, wasClean: code === 1000 }),
+          )
+        }
+
+        emit(payload: string): void {
+          this.dispatchEvent(new MessageEvent('message', { data: payload }))
+        }
+      }
+
+      Object.defineProperty(window, 'WebSocket', {
+        configurable: true,
+        value: DeterministicWebSocket,
+      })
+    })
+
+    await page.route(`${API_ORIGIN}/**`, async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const headers = {
+        'access-control-allow-origin': APP_ORIGIN,
+        'access-control-allow-credentials': 'true',
+        'content-type': 'application/json',
+      }
+      const fulfill = (data: unknown, status = 200) =>
+        route.fulfill({ status, headers, body: JSON.stringify(envelope(data)) })
+
+      if (url.pathname === '/auth/browser/refresh') {
+        return fulfill({
+          kind: 'browser_token_issue',
+          schema_version: '1.0',
+          access_token: 'e2e-access-token',
+          token_type: 'Bearer',
+          expires_in_seconds: 3600,
+        })
+      }
+      if (url.pathname === '/auth/me') {
+        return fulfill({
+          kind: 'authenticated_principal',
+          schema_version: '1.0',
+          subject_id: 'subject-1',
+          username: 'e2e',
+          roles: ['registered_user'],
+          scopes: ['codex:read', 'codex:operate', 'codex:files', 'codex:terminal'],
+          is_admin: false,
+        })
+      }
+      if (url.pathname === '/codex/experience/feature-flags') {
+        return fulfill({
+          codex_scroll_controller_v2: false,
+          codex_realtime_batch_v2: false,
+          codex_authority_recovery_v2: false,
+        })
+      }
+      if (url.pathname === '/codex/realtime-tickets') {
+        return fulfill({ ticket: 'e2e-ticket', expires_at: null })
+      }
+      if (url.pathname === '/codex/hosts') return fulfill({ items: [host] })
+      if (url.pathname === '/codex/hosts/host-1/workspaces') {
+        return fulfill({ items: [workspace] })
+      }
+      if (url.pathname === '/codex/hosts/host-1/threads') {
+        return fulfill({ items: [thread], next_cursor: null })
+      }
+      if (url.pathname === '/codex/hosts/host-1/threads/thread-1') {
+        if (snapshotMode === 'complete') {
+          resolveRecoverySnapshotRequest()
+          await recoverySnapshotReleased
+          recoverySnapshotResponses += 1
+          return fulfill(authoritativeSnapshot)
+        }
+        if (snapshotMode === 'paged') {
+          recoverySnapshotResponses += 1
+          return fulfill({
+            ...authoritativeSnapshot,
+            thread: { ...thread, status: 'active', active_turn_id: 'turn-3' },
+            turns: [
+              completedTurn('turn-1'),
+              completedTurn('turn-2'),
+              {
+                ...completedTurn('turn-3'),
+                status: 'active',
+                completed_at: null,
+              },
+            ],
+            items: [
+              textTimelineItem(
+                'paged-turn-1-tail',
+                'turn-1',
+                'Older page tail',
+              ),
+              textTimelineItem(
+                'paged-turn-2-agent',
+                'turn-2',
+                'Newer page reply',
+              ),
+              textTimelineItem(
+                'paged-turn-3-agent',
+                'turn-3',
+                'Active snapshot',
+              ),
+            ],
+            history_before_cursor: 'older-page',
+            history_has_more: true,
+            history_revision: 'history-paged',
+          })
+        }
+        if (snapshotMode === 'omitted') {
+          recoverySnapshotResponses += 1
+          return fulfill({
+            thread,
+            turns: [completedTurn('turn-1'), completedTurn('turn-2')],
+            items: [],
+            history_status: 'omitted_too_large',
+            history_before_cursor: null,
+            history_has_more: false,
+            history_revision: 'history-3',
+          })
+        }
+        return fulfill({
+          thread,
+          turns: [],
+          items: [],
+          history_status: 'complete',
+          history_before_cursor: null,
+          history_has_more: false,
+          history_revision: 'history-1',
+        })
+      }
+      if (url.pathname === '/codex/hosts/host-1/threads/thread-1/resume') {
+        return fulfill({
+          operation_id: 'resume-1',
+          command_id: 'resume-1',
+          client_operation_id: null,
+          status: 'accepted',
+          replayed: false,
+        })
+      }
+      if (url.pathname === '/codex/hosts/host-1/threads/thread-1/turns') {
+        const operationId = request.postDataJSON().client_operation_id as string
+        authoritativeSnapshot.items[0]!.header.client_operation_id = operationId
+        return fulfill({
+          operation_id: 'turn-1',
+          command_id: 'turn-1',
+          client_operation_id: operationId,
+          status: 'accepted',
+          replayed: false,
+        })
+      }
+      if (url.pathname === '/codex/approvals') return fulfill({ items: [] })
+      return route.fulfill({
+        status: 500,
+        headers,
+        body: JSON.stringify(
+          envelope({ message: 'Unhandled E2E API request' }),
+        ),
+      })
+    })
+
+    await goto('/codex/tasks/thread-1?hostId=host-1&workspaceId=workspace-1', {
+      waitUntil: 'hydration',
+    })
+    await expect(
+      page.getByRole('heading', { name: '执行审计会话' }),
+    ).toBeVisible()
+    await page.waitForFunction(() => Reflect.has(window, '__codexE2eSocket'))
+
+    await page.getByLabel('发送给 Codex').fill('Authoritative user request')
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    await expect(page.locator('[data-codex-item-id^="local-"]')).toHaveCount(1)
+
+    const emit = (event: ReturnType<typeof makeEvent>) =>
+      page.evaluate((payload) => {
+        const socket = Reflect.get(window, '__codexE2eSocket') as {
+          emit: (message: string) => void
+        }
+        socket.emit(JSON.stringify(payload))
+      }, event)
+    const stalledThread = (turnId: string, leaseGeneration: number) => ({
+      ...thread,
+      status: 'active',
+      active_turn_id: turnId,
+      turn_runtime: {
+        turn_id: turnId,
+        thread_id: 'thread-1',
+        phase: 'stalled',
+        last_activity_at: NOW,
+        stalled_reason: 'e2e recovery',
+        lease_generation: leaseGeneration,
+        lease_expires_at: null,
+      },
+    })
+
+    await emit(
+      makeEvent('timeline-live-turn-1-user', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'live-turn-1-user',
+          'turn-1',
+          'Realtime user request',
+          'user_message',
+        ),
+      }),
+    )
+    await emit(
+      makeEvent('timeline-live-turn-1-agent', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'live-turn-1-agent',
+          'turn-1',
+          'Shared terminal reply',
+        ),
+      }),
+    )
+    await emit(
+      makeEvent('timeline-live-turn-2-agent', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'live-turn-2-agent',
+          'turn-2',
+          'Shared terminal reply',
+        ),
+      }),
+    )
+    await expect(
+      page.locator('[data-codex-item-id="live-turn-1-agent"]'),
+    ).toBeVisible()
+
+    snapshotMode = 'complete'
+    await emit(
+      makeEvent('timeline-recovery-stalled', {
+        kind: 'thread.updated',
+        thread: stalledThread('turn-1', 1),
+      }),
+    )
+    await recoverySnapshotRequested
+    await emit(
+      makeEvent('timeline-buffered-stale-item', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'buffered-stale-turn-1-agent',
+          'turn-1',
+          'Buffered stale terminal reply',
+        ),
+      }),
+    )
+    releaseRecoverySnapshot()
+
+    await expect(
+      page.locator('[data-codex-item-id="snapshot-turn-1-agent"]'),
+    ).toBeVisible()
+    await expect(
+      page.locator('[data-codex-item-id="live-turn-1-user"]'),
+    ).toHaveCount(0)
+    await expect(
+      page.locator('[data-codex-item-id="live-turn-1-agent"]'),
+    ).toHaveCount(0)
+    await expect(
+      page.locator('[data-codex-item-id="buffered-stale-turn-1-agent"]'),
+    ).toHaveCount(0)
+    await expect(
+      page.getByText('Shared terminal reply', { exact: true }),
+    ).toHaveCount(2)
+    await expect(page.locator('[data-codex-item-id^="local-"]')).toHaveCount(0)
+    await expect(
+      page.getByText('Authoritative user request', { exact: true }),
+    ).toHaveCount(1)
+
+    await emit(
+      makeEvent('timeline-active-item', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'live-turn-3-agent',
+          'turn-3',
+          'Active live content',
+        ),
+      }),
+    )
+    await expect(
+      page.locator('[data-codex-item-id="live-turn-3-agent"]'),
+    ).toBeVisible()
+    snapshotMode = 'paged'
+    await emit(
+      makeEvent('timeline-paged-stalled', {
+        kind: 'thread.updated',
+        thread: stalledThread('turn-3', 2),
+      }),
+    )
+    await expect.poll(() => recoverySnapshotResponses).toBe(2)
+    await expect(
+      page.locator('[data-codex-item-id="snapshot-turn-1-agent"]'),
+    ).toBeVisible()
+    await expect(
+      page.locator('[data-codex-item-id="snapshot-turn-2-agent"]'),
+    ).toHaveCount(0)
+    await expect(
+      page.locator('[data-codex-item-id="live-turn-3-agent"]'),
+    ).toBeVisible()
+    await expect
+      .poll(async () =>
+        page
+          .locator('[data-codex-item-id^="paged-"]')
+          .evaluateAll((items) =>
+            items.map((item) => item.getAttribute('data-codex-item-id')),
+          ),
+      )
+      .toEqual([
+        'paged-turn-1-tail',
+        'paged-turn-2-agent',
+        'paged-turn-3-agent',
+      ])
+
+    await emit(
+      makeEvent('timeline-live-omitted-item', {
+        kind: 'item.upsert',
+        item: textTimelineItem(
+          'live-omitted-turn-3-agent',
+          'turn-3',
+          'Realtime content retained when history is omitted',
+        ),
+      }),
+    )
+    await expect(
+      page.locator('[data-codex-item-id="live-omitted-turn-3-agent"]'),
+    ).toBeVisible()
+
+    snapshotMode = 'omitted'
+    await emit(
+      makeEvent('timeline-omitted-stalled', {
+        kind: 'thread.updated',
+        thread: stalledThread('turn-3', 3),
+      }),
+    )
+    await expect.poll(() => recoverySnapshotResponses).toBe(3)
+    await expect(page.getByText('部分历史不可用')).toBeVisible()
+    await expect(
+      page.locator('[data-codex-item-id="live-omitted-turn-3-agent"]'),
+    ).toBeVisible()
   })
 })

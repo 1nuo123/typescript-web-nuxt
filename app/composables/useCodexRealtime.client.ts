@@ -268,7 +268,11 @@ export const useCodexRealtime = () => {
     queuedProjectionGeneration = generation
     queuedProjectionEvents.push(...events)
     queuedRecoveryRequired ||= recoveryRequired
-    if (flushImmediately || queuedRecoveryRequired) {
+    if (
+      flushImmediately ||
+      queuedRecoveryRequired ||
+      sessionStore.snapshotRecoveryInFlight
+    ) {
       flushProjectionQueue(generation)
       return
     }
@@ -280,6 +284,18 @@ export const useCodexRealtime = () => {
       flushProjectionQueue(generation)
     }, NORMAL_EVENT_FRAME_WINDOW_MS)
   }
+
+  // A pending frame must enter the recovery buffer before the snapshot can
+  // return. This setup-scoped watcher is disposed with the controller.
+  watch(
+    () => sessionStore.snapshotRecoveryInFlight,
+    (recovering) => {
+      if (recovering && queuedProjectionGeneration !== null) {
+        flushProjectionQueue(queuedProjectionGeneration)
+      }
+    },
+    { flush: 'sync' },
+  )
 
   const recoverAuthentication = async (): Promise<boolean> => {
     if (!authRecoveryInFlight) {
