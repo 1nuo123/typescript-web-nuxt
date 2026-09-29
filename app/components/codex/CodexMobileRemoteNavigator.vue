@@ -229,17 +229,13 @@ const applyRouteFilters = async (reload: boolean): Promise<void> => {
   const routeSearch =
     typeof route.query.search === 'string' ? route.query.search.trim() : ''
   const archived = route.query.archived === 'true'
-  if (
-    routeSearch === sessionStore.threadSearchTerm &&
-    archived === sessionStore.showArchivedThreads
-  ) {
-    return
-  }
-  sessionStore.threadSearchTerm = routeSearch
   searchTerm.value = routeSearch
-  sessionStore.showArchivedThreads = archived
-  if (reload && sessionStore.selectedHostId)
-    await sessionStore.loadThreads(null)
+  await sessionStore.applyRouteFilters({
+    searchTerm: routeSearch,
+    showArchived: archived,
+    workspaceId: null,
+    reload,
+  })
 }
 
 watch(

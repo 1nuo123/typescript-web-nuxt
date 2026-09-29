@@ -650,7 +650,6 @@ describe('Codex pages and mobile controls', () => {
     vi.stubGlobal('$fetch', fetchMock)
     applyCodexSession([AuthScope.CodexHostManage])
     const devicesStore = useCodexDevicesStore()
-    devicesStore.hosts = [host as never]
     const sessionStore = useCodexSessionStore()
     sessionStore.projection.hostsById[host.host_id] = host as never
     sessionStore.projection.workspacesById[workspace.workspace_id] =

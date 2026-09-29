@@ -66,20 +66,12 @@ const route = useRoute()
 const { isMobile } = useBreakpoints()
 const pageError = ref('')
 
-/** 路由筛选先写入 store，再读取线程，避免历史导航短暂显示旧结果集。 */
+/** 路由查询是筛选事实源，统一交给 session action 处理请求隔离和恢复失效。 */
 const applyRouteFilters = async (reload: boolean): Promise<void> => {
   const searchTerm =
     typeof route.query.search === 'string' ? route.query.search.trim() : ''
   const showArchived = route.query.archived === 'true'
-  if (
-    searchTerm === sessionStore.threadSearchTerm &&
-    showArchived === sessionStore.showArchivedThreads
-  ) {
-    return
-  }
-  sessionStore.threadSearchTerm = searchTerm
-  sessionStore.showArchivedThreads = showArchived
-  if (reload && sessionStore.selectedHostId) await sessionStore.loadThreads()
+  await sessionStore.applyRouteFilters({ searchTerm, showArchived, reload })
 }
 
 watch(

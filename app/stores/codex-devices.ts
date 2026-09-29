@@ -17,7 +17,6 @@ import { createCodexIdempotencyKey } from '~/services/api/codex-api-client'
 export const CODEX_HOST_REVOKE_PURPOSE = AuthStepUpPurpose.CodexHostRevoke
 
 interface CodexDevicesStoreState {
-  hosts: CodexHost[]
   verification: DeviceAuthorizationView | null
   loading: boolean
   lastError: ApiErrorPayload | null
@@ -38,17 +37,22 @@ const toVerificationView = (
 
 export const useCodexDevicesStore = defineStore('codex-devices', {
   state: (): CodexDevicesStoreState => ({
-    hosts: [],
     verification: null,
     loading: false,
     lastError: null,
   }),
+  getters: {
+    /** Compatibility selector backed by the session's authoritative host projection. */
+    hosts(): CodexHost[] {
+      return useCodexSessionStore().hosts
+    },
+  },
   actions: {
     async loadHosts(): Promise<void> {
       this.loading = true
       this.lastError = null
       try {
-        this.hosts = (await createCodexHostsClient().list()).items
+        await useCodexSessionStore().loadHosts()
       } catch (error) {
         this.lastError = error as ApiErrorPayload
         throw error
@@ -121,9 +125,7 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
           host.version,
           { display_name: displayName.trim() },
         )
-        this.hosts = this.hosts.map((item) =>
-          item.host_id === updated.host_id ? updated : item,
-        )
+        useCodexSessionStore().upsertHost(updated)
       } catch (error) {
         const normalized = error as ApiErrorPayload
         this.lastError = normalized
@@ -142,7 +144,6 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
       await createCodexHostsClient().revoke(host.host_id, host.version, {
         step_up_token: token,
       })
-      this.hosts = this.hosts.filter((item) => item.host_id !== host.host_id)
       useCodexSessionStore().removeHost(host.host_id)
     },
 

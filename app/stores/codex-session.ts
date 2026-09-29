@@ -403,6 +403,12 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
     },
 
+    /** Keep host mutations on the session projection so every page observes one entity source. */
+    upsertHost(host: CodexHost): void {
+      this.projection.hostsById[host.host_id] = host
+      this.reconcileSelections()
+    },
+
     async selectHost(hostId: string): Promise<void> {
       if (this.selectedHostId !== hostId) this.invalidateSnapshotRecovery()
       const preservedWorkspaceId =
@@ -599,15 +605,45 @@ export const useCodexSessionStore = defineStore('codex-session', {
       searchTerm: string,
       workspaceId?: string | null,
     ): Promise<void> {
-      this.threadSearchTerm = searchTerm.trim()
-      await this.loadThreads(workspaceId)
+      await this.applyRouteFilters({
+        searchTerm,
+        showArchived: this.showArchivedThreads,
+        workspaceId,
+      })
     },
 
     async setArchivedThreadsVisible(visible: boolean): Promise<void> {
+      await this.applyRouteFilters({
+        searchTerm: this.threadSearchTerm,
+        showArchived: visible,
+        workspaceId: this.selectedWorkspaceId,
+      })
+    },
+
+    async applyRouteFilters(input: {
+      searchTerm: string
+      showArchived: boolean
+      workspaceId?: string | null
+      reload?: boolean
+    }): Promise<void> {
+      const searchTerm = input.searchTerm.trim()
+      const showArchived = Boolean(input.showArchived)
+      const changed =
+        searchTerm !== this.threadSearchTerm ||
+        showArchived !== this.showArchivedThreads
+      if (!changed) return
       this.invalidateSnapshotRecovery()
-      this.showArchivedThreads = visible
+      this.threadSearchTerm = searchTerm
+      this.showArchivedThreads = showArchived
+      this.threadNextCursor = null
       this.selectedThreadId = null
-      await this.loadThreads(this.selectedWorkspaceId)
+      if ((input.reload ?? true) && this.selectedHostId) {
+        await this.loadThreads(
+          input.workspaceId === undefined
+            ? this.selectedWorkspaceId
+            : input.workspaceId,
+        )
+      }
     },
 
     async renameThread(

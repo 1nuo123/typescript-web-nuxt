@@ -411,20 +411,12 @@ const showWorkingIndicator = computed(
   () => submitting.value || waitingForTurnStart.value || activeTurn.value,
 )
 
-/** 详情页与列表页共享筛选查询参数，浏览器前进/后退后仍请求同一结果集。 */
+/** 详情页与列表页共享筛选查询参数，统一由 session action 隔离旧请求和恢复。 */
 const applyRouteFilters = async (reload: boolean): Promise<void> => {
   const searchTerm =
     typeof route.query.search === 'string' ? route.query.search.trim() : ''
   const showArchived = route.query.archived === 'true'
-  if (
-    searchTerm === sessionStore.threadSearchTerm &&
-    showArchived === sessionStore.showArchivedThreads
-  ) {
-    return
-  }
-  sessionStore.threadSearchTerm = searchTerm
-  sessionStore.showArchivedThreads = showArchived
-  if (reload && sessionStore.selectedHostId) await sessionStore.loadThreads()
+  await sessionStore.applyRouteFilters({ searchTerm, showArchived, reload })
 }
 const historyWarning = computed(() => {
   if (
