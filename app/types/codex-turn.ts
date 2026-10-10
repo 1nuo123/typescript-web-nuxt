@@ -32,6 +32,7 @@ export interface CodexTurnRuntime {
 }
 
 export interface CodexTurn {
+  items_complete?: boolean
   turn_id: string
   thread_id: string
   status: CodexTurnStatus | string

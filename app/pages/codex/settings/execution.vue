@@ -42,34 +42,25 @@
         <div class="grid gap-4">
           <BaseSelect
             v-if="modelOptions.length"
-            :model-value="draft.model || ''"
+            :model-value="draft.requested.model || ''"
             label="模型"
             :options="modelOptions"
-            @update:model-value="draft.model = $event || null"
+            @update:model-value="draft.requested.model = $event || null"
           />
           <BaseSelect
             v-if="reasoningOptions.length"
-            :model-value="draft.reasoning_effort || ''"
+            :model-value="draft.requested.reasoning_effort || ''"
             label="推理强度"
             :options="reasoningOptions"
-            @update:model-value="draft.reasoning_effort = $event || null"
+            @update:model-value="draft.requested.reasoning_effort = $event || null"
           />
           <BaseSelect
-            :model-value="draft.sandbox_mode"
-            label="沙箱"
-            :options="sandboxOptions"
-            @update:model-value="
-              draft.sandbox_mode = $event as CodexSandboxMode
-            "
+            :model-value="draft.requested.permission_mode"
+            label="访问模式"
+            :options="permissionOptions"
+            @update:model-value="draft.requested.permission_mode = $event as ProjectExecutionOverrides['permission_mode']"
           />
-          <BaseSelect
-            :model-value="draft.approval_policy"
-            label="审批策略"
-            :options="approvalOptions"
-            @update:model-value="
-              draft.approval_policy = $event as CodexApprovalPolicy
-            "
-          />
+          <p class="m-0 text-sm text-ink-muted">{{ effectiveLabel }}</p>
         </div>
 
         <AppAlert
@@ -83,7 +74,7 @@
           class="m-0 text-sm text-success"
           aria-live="polite"
         >
-          运行设置已保存。
+          运行设置已由本机确认，将在下一轮使用。
         </p>
 
         <div class="flex justify-end border-t border-line pt-4">
@@ -101,16 +92,12 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { AuthScope } from '~/types/auth'
 import { RuntimeFeatureFlag } from '~/types/app'
-import {
-  CODEX_APPROVAL_RESTRICTION_ORDER,
-  CODEX_SANDBOX_RESTRICTION_ORDER,
-  CodexSandboxMode,
-} from '~/types/codex-host'
-import type { CodexApprovalPolicy } from '~/types/codex-host'
 import { LOGIN_ROUTE } from '~/types/routes'
 import type {
+  ProjectExecutionOverrides,
   CodexWorkspaceExecutionPreferencesResult,
   CodexWorkspaceExecutionPreferencesUpdate,
   CodexWorkspacePreferenceAdjustedField,
@@ -135,6 +122,13 @@ const saveError = ref('')
 const saveSuccess = ref(false)
 const adjustedFields = ref<CodexWorkspacePreferenceAdjustedField[]>([])
 const draft = ref<CodexWorkspaceExecutionPreferencesUpdate | null>(null)
+const draftContext = ref<{ hostId: string; workspaceId: string } | null>(null)
+const baseline = ref('')
+const effectiveLabel = ref('')
+const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value)
+let loadGeneration = 0
+const draftHost = computed(() => draftContext.value
+  ? sessionStore.projection.hostsById[draftContext.value.hostId] : null)
 
 const routeHostId = computed(() =>
   typeof route.query.hostId === 'string' ? route.query.hostId : undefined,
@@ -145,34 +139,34 @@ const routeWorkspaceId = computed(() =>
     : undefined,
 )
 const workspaceLabel = computed(() => {
-  const workspace = sessionStore.selectedWorkspace
-  const host = sessionStore.selectedHost
+  const workspace = draftContext.value ? sessionStore.projection.workspacesById[draftContext.value.workspaceId] : null
+  const host = draftHost.value
   if (!workspace || !host) return '正在定位项目'
   return `${host.display_name} · ${workspace.display_name}`
 })
 const modelCatalog = computed(
-  () => sessionStore.selectedHost?.capabilities.model_catalog,
+  () => draftHost.value?.capabilities.model_catalog,
 )
 const selectedModelCapability = computed(() =>
   modelCatalog.value?.models.find((item) =>
-    draft.value?.model ? item.model === draft.value.model : item.is_default,
+    draft.value?.requested.model ? item.model === draft.value.requested.model : item.is_default,
   ),
 )
 const modelOptions = computed(() => {
   const options = [
-    { value: '', label: '继承线程或主机模型' },
+    { value: '', label: '继承本机项目配置' },
     ...(modelCatalog.value?.models ?? []).map((item) => ({
       value: item.model,
       label: item.display_name,
     })),
   ]
   if (
-    draft.value?.model &&
-    !options.some((item) => item.value === draft.value?.model)
+    draft.value?.requested.model &&
+    !options.some((item) => item.value === draft.value?.requested.model)
   ) {
     options.push({
-      value: draft.value.model,
-      label: `${draft.value.model}（当前不可用）`,
+      value: draft.value.requested.model,
+      label: `${draft.value.requested.model}（当前不可用）`,
     })
   }
   return options
@@ -185,51 +179,36 @@ const reasoningOptions = computed(() => {
     ),
   ]
   if (
-    draft.value?.reasoning_effort &&
-    !options.some((item) => item.value === draft.value?.reasoning_effort)
+    draft.value?.requested.reasoning_effort &&
+    !options.some((item) => item.value === draft.value?.requested.reasoning_effort)
   ) {
     options.push({
-      value: draft.value.reasoning_effort,
-      label: `${draft.value.reasoning_effort}（当前不可用）`,
+      value: draft.value.requested.reasoning_effort,
+      label: `${draft.value.requested.reasoning_effort}（当前不可用）`,
     })
   }
   return options
 })
 const modelSelectionError = computed(() => {
-  if (!draft.value?.model && !draft.value?.reasoning_effort) return ''
+  if (!draft.value?.requested.model && !draft.value?.requested.reasoning_effort) return ''
   if (modelCatalog.value?.state !== 'ready')
     return '等待主机模型能力同步后再保存。'
   const model = selectedModelCapability.value
   if (!model) return '所选模型当前不可用，请选择可用模型。'
   if (
-    draft.value?.reasoning_effort &&
-    !model.reasoning_efforts.includes(draft.value.reasoning_effort)
+    draft.value?.requested.reasoning_effort &&
+    !model.reasoning_efforts.includes(draft.value.requested.reasoning_effort)
   ) {
     return '当前模型不支持所选推理强度。'
   }
   return ''
 })
-const sandboxOptions = computed(() =>
-  CODEX_SANDBOX_RESTRICTION_ORDER.filter((mode) => {
-    const supported = Boolean(
-      sessionStore.selectedHost?.capabilities.sandbox_modes.includes(mode),
-    )
-    return (
-      supported &&
-      (mode !== CodexSandboxMode.DangerFullAccess ||
-        authStore.canScope(AuthScope.CodexFullAccess))
-    )
-  }).map((value) => ({ value, label: value })),
-)
-const approvalOptions = computed(() =>
-  CODEX_APPROVAL_RESTRICTION_ORDER.filter((policy) =>
-    Boolean(
-      sessionStore.selectedHost?.capabilities.approval_policies.includes(
-        policy,
-      ),
-    ),
-  ).map((value) => ({ value, label: value })),
-)
+const permissionOptions = computed(() => [
+  { value: 'inherit', label: '继承本机项目配置' },
+  { value: 'restricted', label: '受限访问 · 命令需要审批' },
+  ...(authStore.canScope(AuthScope.CodexFullAccess)
+    ? [{ value: 'full_access', label: '完全访问 · 不请求普通命令审批' }] : []),
+])
 const adjustedFieldLabel = computed(() =>
   adjustedFields.value
     .map(
@@ -248,16 +227,18 @@ const adjustedFieldLabel = computed(() =>
 const applyResult = (
   result: CodexWorkspaceExecutionPreferencesResult,
 ): void => {
+  const effective = result.effective_preferences
   draft.value = {
-    model: result.effective_preferences.model,
-    reasoning_effort: result.effective_preferences.reasoning_effort,
-    sandbox_mode: result.effective_preferences.sandbox_mode,
-    approval_policy: result.effective_preferences.approval_policy,
+    expected_revision: effective.local_revision,
+    requested: { ...effective.requested },
   }
+  effectiveLabel.value = effective.error || `本机确认：${effective.model ?? '默认模型'} · ${effective.reasoning_effort ?? '默认档位'} · ${effective.sandbox_mode} / ${effective.approval_policy}；设置在下一轮使用。`
   adjustedFields.value = result.adjusted_fields
+  baseline.value = JSON.stringify(draft.value)
 }
 
 const loadPreferences = async (): Promise<void> => {
+  const generation = ++loadGeneration
   loading.value = true
   pageError.value = ''
   try {
@@ -268,26 +249,34 @@ const loadPreferences = async (): Promise<void> => {
     if (!restored) {
       throw new Error(sessionStore.selectionError ?? '项目权威归属恢复失败。')
     }
-    const result = await sessionStore.loadWorkspaceExecutionPreferences()
-    if (!result) throw new Error('运行设置在切换项目时失效，请重新打开设置。')
+    const hostId = routeHostId.value ?? sessionStore.selectedHostId
+    const workspaceId = routeWorkspaceId.value ?? sessionStore.selectedWorkspaceId
+    if (!hostId || !workspaceId) throw new Error('缺少明确的项目身份。')
+    draftContext.value = {hostId, workspaceId}
+    const result = await createCodexWorkspacesClient().readExecutionPreferences(hostId, workspaceId)
+    if (generation !== loadGeneration) return
     applyResult(result)
   } catch (error) {
+    if (generation !== loadGeneration) return
     pageError.value =
       error instanceof Error ? error.message : '读取运行设置失败。'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
 const savePreferences = async (): Promise<void> => {
-  if (!draft.value) return
+  if (!draft.value || !draftContext.value) return
+  const generation = loadGeneration
   saving.value = true
   saveError.value = ''
   saveSuccess.value = false
   try {
     const result = await sessionStore.updateWorkspaceExecutionPreferences(
       draft.value,
+      draftContext.value,
     )
+    if (generation !== loadGeneration) return
     applyResult(result)
     saveSuccess.value = true
   } catch (error) {
@@ -301,4 +290,9 @@ const savePreferences = async (): Promise<void> => {
 onMounted(() => {
   void loadPreferences()
 })
+const confirmLeave = () => !dirty.value || window.confirm('运行设置尚未保存，是否放弃修改？')
+onBeforeRouteLeave(() => confirmLeave())
+onBeforeRouteUpdate(() => confirmLeave())
+watch([routeHostId, routeWorkspaceId], () => void loadPreferences())
+onBeforeUnmount(() => { loadGeneration += 1 })
 </script>

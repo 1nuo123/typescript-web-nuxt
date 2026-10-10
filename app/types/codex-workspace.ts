@@ -39,6 +39,10 @@ export interface CodexWorkspaceExecutionPreferences {
   sandbox_mode: CodexSandboxMode
   approval_policy: CodexApprovalPolicy
   capabilities_revision: string
+  requested: ProjectExecutionOverrides
+  local_revision: number
+  applied_state: "unverified" | "saved" | "next_turn" | "applied" | "blocked"
+  error: string | null
 }
 
 /** 服务端主动收敛偏好时返回的字段名，用于向用户解释本次调整。 */
@@ -55,11 +59,15 @@ export interface CodexWorkspaceExecutionPreferencesResult {
   adjusted_fields: CodexWorkspacePreferenceAdjustedField[]
 }
 
-export interface CodexWorkspaceExecutionPreferencesUpdate {
+export interface ProjectExecutionOverrides {
   model: string | null
   reasoning_effort: string | null
-  sandbox_mode: CodexSandboxMode
-  approval_policy: CodexApprovalPolicy
+  permission_mode: 'inherit' | 'restricted' | 'full_access'
+}
+
+export interface CodexWorkspaceExecutionPreferencesUpdate {
+  expected_revision: number
+  requested: ProjectExecutionOverrides
 }
 
 export interface CodexWorkspaceUpdateRequest {

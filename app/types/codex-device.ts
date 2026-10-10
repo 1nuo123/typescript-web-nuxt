@@ -64,6 +64,7 @@ export interface DeviceAuthorizationDecideRequestEnvelope {
 }
 
 export interface DeviceAuthorizationView {
+  hostId: string | null
   enrollmentId: string
   userCode: string
   state: DeviceAuthorizationState

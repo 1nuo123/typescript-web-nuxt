@@ -88,6 +88,7 @@
     </header>
 
     <div ref="threadListContainer" class="min-h-0 flex-1 overflow-y-auto p-2">
+      <AppAlert v-if="actionError" variant="danger" title="操作未完成" :description="actionError" />
       <AppSkeleton v-if="sessionStore.loading" class="h-36" />
       <p
         v-else-if="sessionStore.threads.length === 0"
@@ -152,7 +153,8 @@
               <button
                 type="button"
                 class="flex h-8 items-center gap-2 rounded px-2 text-left hover:bg-surface-muted"
-                @click="toggleThreadPin(thread)"
+                :disabled="actionBusy"
+                @click="runThreadAction($event, () => toggleThreadPin(thread))"
               >
                 <PinOff v-if="thread.is_pinned" class="size-3.5" />
                 <Pin v-else class="size-3.5" />
@@ -161,7 +163,8 @@
               <button
                 type="button"
                 class="flex h-8 items-center gap-2 rounded px-2 text-left hover:bg-surface-muted"
-                @click="toggleArchive(thread)"
+                :disabled="actionBusy"
+                @click="runThreadAction($event, () => toggleArchive(thread))"
               >
                 <ArchiveRestore v-if="thread.archived" class="size-3.5" />
                 <Archive v-else class="size-3.5" />
@@ -171,6 +174,7 @@
           </details>
         </article>
       </div>
+      <CodexThreadLoadMore />
     </div>
 
     <CodexConversationRenameDialog
@@ -213,6 +217,18 @@ const threadStatusLabels: Readonly<Record<CodexThreadStatus, string>> = {
 }
 
 const sessionStore = useCodexSessionStore()
+const actionBusy = ref(false)
+const actionError = ref('')
+const runThreadAction = async (event: Event, action: () => Promise<void>) => {
+  if (actionBusy.value) return
+  actionBusy.value = true
+  actionError.value = ''
+  const menu = (event.target as HTMLElement).closest('details')
+  if (menu) menu.open = false
+  try { await action() } catch (error) {
+    actionError.value = error instanceof Error ? error.message : '请重新核对操作状态。'
+  } finally { actionBusy.value = false }
+}
 const uiStore = useCodexUiStore()
 const searchTerm = ref(sessionStore.threadSearchTerm)
 const renamingThread = ref<CodexThread | null>(null)

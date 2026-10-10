@@ -160,8 +160,10 @@ const tasksRoute = computed(() =>
     workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
   }),
 )
+const currentRoute = useRoute()
 const executionSettingsRoute = computed(() =>
   buildCodexExecutionSettingsRoute({
+    returnTo: currentRoute.fullPath,
     hostId: sessionStore.selectedHostId ?? undefined,
     workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
   }),

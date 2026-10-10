@@ -9,7 +9,7 @@
       <div>
         <h1 class="m-0 text-xl font-semibold">电脑</h1>
         <p class="mt-1 mb-0 text-sm text-ink-muted">
-          {{ activeHostCount }} 台可用，{{ devicesStore.hosts.length }} 台已登记
+          {{ activeHostCount }} 台在线，{{ devicesStore.hosts.length }} 台已登记
         </p>
       </div>
       <BaseButton :loading="connecting" @click="connectComputer">
@@ -151,12 +151,16 @@
         <BaseButton
           size="sm"
           variant="secondary"
-          :disabled="notificationPermission !== 'default'"
+          :disabled="notificationPermission === 'unsupported'"
           @click="requestNotificationPermission"
         >
           {{ notificationPermissionLabel }}
         </BaseButton>
       </div>
+      <p class="m-0 text-xs text-ink-muted">通知仅在 Remote 页面保持打开时可用。</p>
+      <p v-if="notificationPermission === 'denied'" class="m-0 text-xs text-ink-muted">
+        请在浏览器地址栏的站点设置中允许通知，然后点击按钮重新检测。
+      </p>
     </section>
 
     <BaseModal
@@ -264,6 +268,7 @@ import { CodexRealtimeConnectionStatus } from '~/types/codex-realtime'
 import { LOGIN_ROUTE } from '~/types/routes'
 import {
   readCodexBrowserNotificationPermission,
+  refreshCodexBrowserNotificationPermission,
   requestCodexBrowserNotificationPermission,
   type CodexBrowserNotificationPermission,
 } from '~/utils/codex-browser-notification'
@@ -304,7 +309,7 @@ let navigationTimer: ReturnType<typeof setTimeout> | null = null
 
 const activeHostCount = computed(
   () =>
-    devicesStore.hosts.filter((host) => host.status !== CodexHostStatus.Revoked)
+    devicesStore.hosts.filter((host) => host.status === CodexHostStatus.Online)
       .length,
 )
 
@@ -375,8 +380,11 @@ const openAddDialog = () => {
 }
 
 const requestNotificationPermission = async (): Promise<void> => {
-  notificationPermission.value =
-    await requestCodexBrowserNotificationPermission()
+  if (readCodexBrowserNotificationPermission() === 'default') {
+    notificationPermission.value = await requestCodexBrowserNotificationPermission()
+  } else {
+    notificationPermission.value = await refreshCodexBrowserNotificationPermission()
+  }
 }
 
 const connectComputer = async (): Promise<void> => {

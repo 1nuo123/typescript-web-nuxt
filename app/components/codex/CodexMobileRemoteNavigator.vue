@@ -92,6 +92,7 @@
     <div
       class="min-h-0 overflow-y-auto px-3 py-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
     >
+      <CodexThreadLoadMore />
       <AppSkeleton v-if="sessionStore.loading" class="h-48" />
       <AppAlert
         v-else-if="sessionStore.lastError"
@@ -326,16 +327,10 @@ const submitSearch = async (): Promise<void> => {
 }
 
 const createConversation = async (): Promise<void> => {
-  const previousIds = new Set(
-    sessionStore.hostThreads.map((thread) => thread.upstream_thread_id),
-  )
   creating.value = true
   try {
     await sessionStore.createThread()
-    await sessionStore.loadThreads(null)
-    const created = sessionStore.hostThreads.find(
-      (thread) => !previousIds.has(thread.upstream_thread_id),
-    )
+    const created = await sessionStore.waitForCreatedThread()
     if (!created) return
     sessionStore.clearPendingThreadStart()
     await navigateTo(threadRoute(created))

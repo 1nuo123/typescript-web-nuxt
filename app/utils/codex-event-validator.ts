@@ -33,6 +33,8 @@ const BATCH_BARRIER_EVENT_TYPES = new Set<CodexRealtimeEventType>([
   CodexRealtimeEventType.ProtocolWarning,
 ])
 const HEADER_KEYS = new Set([
+  'source_epoch',
+  'source_seq',
   'kind',
   'schema_version',
   'stream_epoch',
@@ -118,6 +120,8 @@ const detailKeys = (eventType: CodexRealtimeEventType): ReadonlySet<string> => {
         'history_before_cursor',
         'history_has_more',
         'history_revision',
+        'source_epoch',
+        'source_seq',
       ])
     case CodexRealtimeEventType.ThreadUpdated:
       return new Set([...shared, 'thread'])
@@ -328,6 +332,8 @@ export const validateCodexRealtimeEvent = (
       `Codex实时事件类型不受支持：${eventType}。`,
     )
   }
+  if (header.source_epoch != null && typeof header.source_epoch !== 'string') throw new CodexRealtimeContractError('事件来源代次无效。')
+  if (header.source_seq != null && (!Number.isSafeInteger(header.source_seq) || Number(header.source_seq) < 0)) throw new CodexRealtimeContractError('事件来源序号无效。')
   requireString(header, 'stream_epoch')
   requireString(header, 'event_id')
   requireTimestamp(header, 'occurred_at')

@@ -26,6 +26,7 @@ const toVerificationView = (
   userCode: string,
   envelope: DeviceAuthorizationEnvelope,
 ): DeviceAuthorizationView => ({
+  hostId: envelope.detail.host_id,
   enrollmentId: envelope.header.enrollment_id,
   userCode,
   state: envelope.detail.state,

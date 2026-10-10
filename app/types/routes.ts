@@ -90,11 +90,12 @@ export const buildCodexApprovalsRoute = (
 
 /** 运行设置保持独立页面，避免在会话主视图内展开后压缩时间线。 */
 export const buildCodexExecutionSettingsRoute = (
-  route: Pick<CodexTaskRoute, 'hostId' | 'workspaceId'> = {},
+  route: Pick<CodexTaskRoute, 'hostId' | 'workspaceId'> & { returnTo?: string } = {},
 ): string => {
   const query = new URLSearchParams()
   if (route.hostId) query.set('hostId', route.hostId)
   if (route.workspaceId) query.set('workspaceId', route.workspaceId)
+  if (route.returnTo?.startsWith(`${CODEX_TASKS_ROUTE}/`)) query.set('returnTo', route.returnTo)
   const queryString = query.toString()
   return `${CODEX_EXECUTION_SETTINGS_ROUTE}${
     queryString ? `?${queryString}` : ''

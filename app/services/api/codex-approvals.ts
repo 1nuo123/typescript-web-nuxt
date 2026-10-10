@@ -6,7 +6,6 @@ import type { CodexOperationAccepted } from '~/types/codex-turn'
 import {
   buildCodexIdempotencyHeaders,
   createCodexApiClient,
-  createCodexIdempotencyKey,
 } from './codex-api-client'
 
 export const CODEX_APPROVALS_PATH = '/codex/approvals'
@@ -20,7 +19,7 @@ export const createCodexApprovalsClient = () => {
       decision: CodexApprovalDecision,
       approvalVersion: number,
       stepUpToken?: string,
-      idempotencyKey = createCodexIdempotencyKey(),
+      idempotencyKey = `approval:${approvalId}:${approvalVersion}:${decision}`,
     ) =>
       client.post<CodexOperationAccepted>(
         `${CODEX_APPROVALS_PATH}/${encodeURIComponent(approvalId)}/decision`,

@@ -36,6 +36,8 @@ export enum CodexRealtimeEventType {
 }
 
 export interface CodexRealtimeEventHeader {
+  source_epoch?: string | null
+  source_seq?: number | null
   kind: 'codex_realtime_event'
   schema_version: typeof CODEX_REALTIME_SCHEMA_VERSION
   stream_epoch: string
@@ -83,6 +85,8 @@ export interface CodexWorkspaceSnapshotDetail extends CodexRealtimeDetailBase {
 }
 
 export interface CodexThreadSnapshotDetail extends CodexRealtimeDetailBase {
+  source_epoch?: string | null
+  source_seq?: number
   kind: CodexRealtimeEventType.ThreadSnapshot
   thread: CodexThread
   turns: CodexTurn[]

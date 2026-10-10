@@ -1,3 +1,4 @@
+import type { CodexExecutionOptions } from '~/types/codex-thread'
 import type {
   CodexConversationListQuery,
   CodexConversationPinRequest,
@@ -67,12 +68,13 @@ export const createCodexThreadsClient = () => {
       hostId: string,
       threadId: string,
       historyLimit = CODEX_DEFAULT_HISTORY_LIMIT,
+      includeHistory = true,
     ) =>
       client.get<CodexThreadAuthoritySnapshot>(
         buildCodexThreadPath(hostId, threadId),
         {
           query: {
-            include_history: true,
+            include_history: includeHistory,
             history_limit: historyLimit,
           },
         },
@@ -111,10 +113,10 @@ export const createCodexThreadsClient = () => {
         body,
         commandOptions(idempotencyKey),
       ),
-    resume: (hostId: string, threadId: string, idempotencyKey?: string) =>
+    resume: (hostId: string, threadId: string, execution: CodexExecutionOptions, idempotencyKey?: string) =>
       client.post<CodexOperationAccepted>(
         `${buildCodexThreadPath(hostId, threadId)}/resume`,
-        undefined,
+        execution,
         commandOptions(idempotencyKey),
       ),
     startTurn: (

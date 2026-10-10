@@ -48,7 +48,7 @@
           v-if="diffItems.length === 0"
           class="m-0 py-10 text-center text-xs text-ink-muted"
         >
-          当前会话还没有文件变更。
+          尚未收到可展示的文件变更。通过命令写入的文件可能没有结构化变更记录；此处不代表磁盘没有变化。
         </p>
         <div v-else class="grid gap-3">
           <select
@@ -58,12 +58,11 @@
             @change="selectDiff"
           >
             <option
-              v-for="item in diffItems"
+              v-for="(item, index) in diffItems"
               :key="item.header.item_id"
               :value="item.header.item_id"
             >
-              {{ item.detail.diff.files.length }} 个文件 ·
-              {{ item.header.item_id }}
+              第 {{ index + 1 }} 次变更 · {{ item.detail.diff.files.length }} 个文件
             </option>
           </select>
           <section

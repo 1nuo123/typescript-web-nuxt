@@ -14,8 +14,8 @@ export interface CodexAgentReleaseDownloadDetail {
   version: string
   distribution_mode: CodexAgentReleaseDistributionMode
   artifact_sha256: string
-  download_url: string
-  manifest_url: string
+  download_url: string | null
+  manifest_url: string | null
   minimum_security_version: string
   automatic_updates_enabled: boolean
 }

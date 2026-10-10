@@ -60,23 +60,11 @@
         class="grid gap-2 border-t border-line pt-4"
       >
         <h2 class="m-0 text-sm font-semibold">最近处理</h2>
-        <div
+        <CodexApprovalCard
           v-for="approval in visibleRecentlyResolved"
           :key="`resolved-${approval.approval_id}`"
-          class="flex items-center justify-between gap-3 border-b border-line py-2 text-xs"
-        >
-          <span class="truncate">{{
-            approval.display_summary.title || 'Codex 审批'
-          }}</span>
-          <span class="grid shrink-0 justify-items-end gap-0.5">
-            <strong class="font-medium text-ink">
-              {{ resolvedDecisionLabel(approval) }}
-            </strong>
-            <span class="text-ink-muted">
-              {{ approvalStatePresentation[approval.state].label }}
-            </span>
-          </span>
-        </div>
+          :approval="approval"
+        />
       </section>
     </div>
   </section>

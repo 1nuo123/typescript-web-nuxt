@@ -353,6 +353,7 @@ const approvalDeliveryStatus = computed<{
     .filter(
       (approval) =>
         approval.thread_id === threadId.value &&
+        approval.turn_id === runtime.value?.turn_id &&
         (approval.state === CodexApprovalState.Claimed ||
           approval.state === CodexApprovalState.DeliveryFailed),
     )
@@ -427,7 +428,7 @@ const historyWarning = computed(() => {
   }
   if (
     sessionStore.selectedHistoryStatus ===
-    CodexThreadHistoryStatus.NotAvailableYet
+    CodexThreadHistoryStatus.NotAvailableYet && sessionStore.selectedTimeline.length === 0
   ) {
     return '会话正文尚未在 App Server 中可读取。'
   }
@@ -664,16 +665,22 @@ const openContextRoute = (
 }
 
 watch(
-  [routeContextView, routeContextItemId],
-  ([view, itemId], [previousView]) => {
-    if (view) {
+  [
+    routeContextView,
+    routeContextItemId,
+    () => sessionStore.selectedThreadId === threadId.value &&
+      (!routeHostId.value || sessionStore.selectedHostId === routeHostId.value),
+  ],
+  ([view, itemId, selectionReady], [previousView]) => {
+    if (view && selectionReady) {
       uiStore.openContext(view, itemId)
       return
     }
     uiStore.closeContext()
-    if (previousView) void restoreContextReturnAnchor()
+    if (!view && previousView) void restoreContextReturnAnchor()
   },
-  { immediate: true },
+  // 主机切换先清理旧瞬态 UI，再由 URL 为已恢复的会话投影上下文。
+  { immediate: true, flush: 'post' },
 )
 
 watch(

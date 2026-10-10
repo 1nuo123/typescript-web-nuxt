@@ -12,7 +12,7 @@ const NOTIFICATION_BODY: Readonly<
   [CodexBrowserNotificationKind.Completed]: 'Codex 会话已完成。',
   [CodexBrowserNotificationKind.Failed]: 'Codex 会话执行失败。',
 }
-const CODEX_NOTIFICATION_TARGET = '/codex'
+const CODEX_NOTIFICATION_TARGET = '/codex/approval-center'
 
 export type CodexBrowserNotificationPermission =
   | NotificationPermission
@@ -25,6 +25,18 @@ export const readCodexBrowserNotificationPermission =
       ? 'unsupported'
       : Notification.permission
 
+/** Chromium 的 Notification.permission 可能缓存旧值，主动检测优先读取实时权限。 */
+export const refreshCodexBrowserNotificationPermission =
+  async (): Promise<CodexBrowserNotificationPermission> => {
+    if (typeof Notification === 'undefined') return 'unsupported'
+    try {
+      const permission = await navigator.permissions.query({ name: 'notifications' })
+      return permission.state === 'prompt' ? 'default' : permission.state
+    } catch {
+      return Notification.permission
+    }
+  }
+
 /** 请求系统通知授权。调用方必须直接绑定到用户手势，避免页面加载时弹窗。 */
 export const requestCodexBrowserNotificationPermission =
   async (): Promise<CodexBrowserNotificationPermission> => {
@@ -33,17 +45,20 @@ export const requestCodexBrowserNotificationPermission =
   }
 
 /** 发布不包含用户数据的固定通知；未授权时安静跳过。 */
-export const publishCodexBrowserNotification = (
+export const publishCodexBrowserNotification = async (
   kind: CodexBrowserNotificationKind,
-): void => {
-  if (readCodexBrowserNotificationPermission() !== 'granted') return
+  onOpen?: () => void,
+): Promise<void> => {
+  if (await refreshCodexBrowserNotificationPermission() !== 'granted') return
   const notification = new Notification('Codex', {
     body: NOTIFICATION_BODY[kind],
     silent: false,
   })
-  // 系统通知不携带会话标识；点击始终回到固定 Remote 入口。
+  // 系统通知不携带会话标识；目标仅保存在当前页面的回调中。
   notification.onclick = () => {
     window.focus()
-    window.location.assign(CODEX_NOTIFICATION_TARGET)
+    notification.close()
+    if (onOpen) onOpen()
+    else window.location.assign(CODEX_NOTIFICATION_TARGET)
   }
 }

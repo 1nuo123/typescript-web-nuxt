@@ -43,6 +43,7 @@ export const getFullyCoveredTerminalTurnIds = (
     snapshot.turns
       .filter(
         (turn) =>
+          turn.items_complete === true &&
           TERMINAL_TURN_STATUSES.has(turn.status) &&
           representedTurnIds.has(turn.turn_id),
       )

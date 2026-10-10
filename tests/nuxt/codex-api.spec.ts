@@ -327,10 +327,8 @@ describe('Codex API services', () => {
         'host/with spaces',
         'workspace/with spaces',
         {
-          model: null,
-          reasoning_effort: null,
-          sandbox_mode: CodexSandboxMode.DangerFullAccess,
-          approval_policy: CodexApprovalPolicy.Never,
+          expected_revision: 0,
+          requested: { model: null, reasoning_effort: null, permission_mode: 'full_access' },
         },
       ),
     ).resolves.toEqual(response)

@@ -95,6 +95,11 @@
         {{ approvalStateMessage }}
       </span>
       <BaseButton
+        v-if="approval.state === CodexApprovalState.DeliveryFailed && approval.decision"
+        size="sm" variant="secondary" :disabled="submitting"
+        @click="requestGrant(approval.decision)"
+      >重新核对并交付</BaseButton>
+      <BaseButton
         v-if="canDecide && allows(CodexApprovalDecision.Decline)"
         size="sm"
         variant="secondary"
@@ -304,7 +309,7 @@ const approvalStateMessage = computed(() => {
     case CodexApprovalState.Claimed:
       return '审批结果已提交，正在等待 Agent 确认应用。'
     case CodexApprovalState.DeliveryFailed:
-      return '审批结果交付失败，请保持当前页面并在审批中心核对。'
+      return '决策已记录但未确认交付。可重新核对；原请求失效时请返回会话触发新审批。'
     case CodexApprovalState.Applied:
       return 'Agent 已确认审批结果；文件是否成功以工具结果为准。'
     case CodexApprovalState.Expired:

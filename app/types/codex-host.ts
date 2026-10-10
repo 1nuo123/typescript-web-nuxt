@@ -93,7 +93,7 @@ export const CODEX_SANDBOX_RESTRICTION_ORDER: readonly CodexSandboxMode[] = [
 ] as const
 
 export const CODEX_APPROVAL_RESTRICTION_ORDER: readonly CodexApprovalPolicy[] =
-  [CodexApprovalPolicy.Untrusted, CodexApprovalPolicy.OnRequest] as const
+  [CodexApprovalPolicy.Untrusted, CodexApprovalPolicy.OnRequest, CodexApprovalPolicy.Never] as const
 
 export interface CodexHostCompatibilityDetail {
   state: CodexHostCompatibilityState

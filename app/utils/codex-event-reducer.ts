@@ -33,6 +33,7 @@ import {
 import { getFullyCoveredTerminalTurnIds } from './codex-snapshot-coverage'
 
 export interface CodexSessionProjection {
+  snapshotSourceByThread: Record<string, { epoch: string; seq: number; itemIds: Record<string, true> }>
   hostsById: Record<string, CodexHost>
   workspacesById: Record<string, CodexWorkspace>
   threadsById: Record<string, CodexThread>
@@ -53,6 +54,13 @@ export interface CodexSessionProjection {
 export const CODEX_TIMELINE_BODY_EVICTION_HIGH_WATER_BYTES = 20 * 1024 * 1024
 export const CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES = 16 * 1024 * 1024
 
+/** 原始 item ID 仅在所属主机/会话内有意义，禁止直接用作全局索引。 */
+export const codexItemKey = (
+  state: CodexSessionProjection,
+  threadId: string,
+  itemId: string,
+): string => JSON.stringify([state.threadsById[threadId]?.host_id ?? '', threadId, itemId])
+
 /** 冻结数组本身，令 Vue 无需为整条时间线建立深层代理；条目更新通过替换数组完成。 */
 const freezeTimelineItems = (
   items: readonly CodexTimelineRenderableItem[],
@@ -64,6 +72,7 @@ const isCodexTimelineItem = (
 ): item is CodexTimelineItem => item.detail.kind !== 'evicted'
 
 export const createCodexSessionProjection = (): CodexSessionProjection => ({
+  snapshotSourceByThread: {},
   hostsById: {},
   workspacesById: {},
   threadsById: {},
@@ -92,6 +101,11 @@ const retainThreadState = (
   return {
     ...state,
     threadsById,
+    snapshotSourceByThread: Object.fromEntries(
+      Object.entries(state.snapshotSourceByThread).filter(([threadId]) =>
+        retainedThreadIds.has(threadId),
+      ),
+    ),
     turnsById: Object.fromEntries(
       Object.entries(state.turnsById).filter(([, turn]) =>
         retainedThreadIds.has(turn.thread_id),
@@ -237,7 +251,7 @@ const upsertItem = (
   const existingTimeline =
     state.timelineItemsByThread[threadId] ??
     orderedIds.flatMap((orderedId) => {
-      const orderedItem = state.itemsById[orderedId]
+      const orderedItem = state.itemsById[codexItemKey(state, threadId, orderedId)]
       return orderedItem ? [orderedItem] : []
     })
   const optimisticItemId =
@@ -252,7 +266,7 @@ const upsertItem = (
     optimisticItemId !== null &&
     optimisticItemId !== itemId &&
     optimisticIndex >= 0 &&
-    state.itemSourceById[optimisticItemId] ===
+    state.itemSourceById[codexItemKey(state, threadId, optimisticItemId)] ===
       CodexTimelineItemSource.Optimistic
   let nextTimeline = [...existingTimeline]
   let nextOrderedIds = orderedIds
@@ -272,10 +286,11 @@ const upsertItem = (
     reconciledIndex = Math.min(optimisticIndex, nextOrderedIds.length)
     nextOrderedIds.splice(reconciledIndex, 0, itemId)
     nextTimeline.splice(reconciledIndex, 0, boundedItem)
-    const { [optimisticItemId]: _optimisticItem, ...itemsWithoutOptimistic } =
+    const optimisticKey = codexItemKey(state, threadId, optimisticItemId)
+    const { [optimisticKey]: _optimisticItem, ...itemsWithoutOptimistic } =
       nextItemsById
     const {
-      [optimisticItemId]: _optimisticSource,
+      [optimisticKey]: _optimisticSource,
       ...sourcesWithoutOptimistic
     } = nextItemSourceById
     nextItemsById = itemsWithoutOptimistic
@@ -312,8 +327,8 @@ const upsertItem = (
       ]),
     )
   }
-  nextItemsById[itemId] = boundedItem
-  nextItemSourceById[itemId] = source
+  nextItemsById[codexItemKey(state, threadId, itemId)] = boundedItem
+  nextItemSourceById[codexItemKey(state, threadId, itemId)] = source
   return {
     ...state,
     itemsById: nextItemsById,
@@ -352,7 +367,7 @@ const replaceFullyCoveredSnapshotTurns = (
     .map((item) => item.header.item_id)
   const snapshotIds = new Set(snapshotItemIds)
   const replacesItem = (itemId: string): boolean => {
-    const item = state.itemsById[itemId]
+    const item = state.itemsById[codexItemKey(state, threadId, itemId)]
     return (
       snapshotIds.has(itemId) ||
       (item?.header.thread_id === threadId &&
@@ -377,7 +392,8 @@ const replaceFullyCoveredSnapshotTurns = (
 
   const itemsById = Object.fromEntries(
     Object.entries(state.itemsById).filter(
-      ([itemId]) => !replacesItem(itemId) || snapshotIds.has(itemId),
+      ([, item]) => item.header.thread_id !== threadId ||
+        !replacesItem(item.header.item_id) || snapshotIds.has(item.header.item_id),
     ),
   ) as Record<string, CodexTimelineRenderableItem>
   const itemSourceById = Object.fromEntries(
@@ -386,7 +402,7 @@ const replaceFullyCoveredSnapshotTurns = (
     ),
   ) as Record<string, CodexTimelineItemSource>
   const timeline = nextOrderedIds.flatMap((itemId) => {
-    const item = itemsById[itemId]
+    const item = itemsById[codexItemKey(state, threadId, itemId)]
     return item ? [item] : []
   })
   return {
@@ -421,7 +437,7 @@ const replaceTimelineItem = (
   const timeline =
     state.timelineItemsByThread[threadId] ??
     orderedIds.flatMap((orderedId) => {
-      const orderedItem = state.itemsById[orderedId]
+      const orderedItem = state.itemsById[codexItemKey(state, threadId, orderedId)]
       return orderedItem ? [orderedItem] : []
     })
   const index =
@@ -432,7 +448,7 @@ const replaceTimelineItem = (
   nextTimeline[index] = item
   return {
     ...state,
-    itemsById: { ...state.itemsById, [itemId]: item },
+    itemsById: { ...state.itemsById, [codexItemKey(state, threadId, itemId)]: item },
     timelineItemsByThread: {
       ...state.timelineItemsByThread,
       [threadId]: freezeTimelineItems(nextTimeline),
@@ -520,7 +536,7 @@ export const evictCodexTimelineBodies = (
 ): CodexSessionProjection => {
   const orderedItemIds = state.orderedItemIdsByThread[threadId] ?? []
   let retainedBytes = orderedItemIds.reduce((total, itemId) => {
-    const item = state.itemsById[itemId]
+    const item = state.itemsById[codexItemKey(state, threadId, itemId)]
     return total + (item ? readTimelineBodyBytes(item) : 0)
   }, 0)
   if (retainedBytes <= CODEX_TIMELINE_BODY_EVICTION_HIGH_WATER_BYTES)
@@ -529,7 +545,7 @@ export const evictCodexTimelineBodies = (
   let changed = false
   for (const itemId of orderedItemIds) {
     if (retainedBytes <= CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES) break
-    const item = itemsById[itemId]
+    const item = itemsById[codexItemKey(state, threadId, itemId)]
     if (
       !item ||
       item.detail.kind === 'evicted' ||
@@ -539,7 +555,7 @@ export const evictCodexTimelineBodies = (
       continue
     }
     retainedBytes -= readTimelineBodyBytes(item)
-    itemsById[itemId] = {
+    itemsById[codexItemKey(state, threadId, itemId)] = {
       header: item.header,
       detail: {
         kind: 'evicted',
@@ -551,7 +567,7 @@ export const evictCodexTimelineBodies = (
   }
   if (!changed) return state
   const timeline = orderedItemIds.flatMap((itemId) => {
-    const item = itemsById[itemId]
+    const item = itemsById[codexItemKey(state, threadId, itemId)]
     return item ? [item] : []
   })
   return {
@@ -576,13 +592,13 @@ export const restoreCodexTimelineBodies = (
   items: readonly CodexTimelineItem[],
 ): CodexSessionProjection => {
   const restored = items.filter(
-    (item) => state.itemsById[item.header.item_id]?.detail.kind === 'evicted',
+    (item) => state.itemsById[codexItemKey(state, item.header.thread_id, item.header.item_id)]?.detail.kind === 'evicted',
   )
   if (!restored.length) return state
   const itemsById = {
     ...state.itemsById,
     ...Object.fromEntries(
-      restored.map((item) => [item.header.item_id, boundTimelineItem(item)]),
+      restored.map((item) => [codexItemKey(state, item.header.thread_id, item.header.item_id), boundTimelineItem(item)]),
     ),
   }
   const updatedThreadIds = new Set(
@@ -593,7 +609,7 @@ export const restoreCodexTimelineBodies = (
   for (const threadId of updatedThreadIds) {
     const orderedIds = state.orderedItemIdsByThread[threadId] ?? []
     const timeline = orderedIds.flatMap((itemId) => {
-      const item = itemsById[itemId]
+      const item = itemsById[codexItemKey(state, threadId, itemId)]
       return item ? [item] : []
     })
     timelineItemsByThread[threadId] = freezeTimelineItems(timeline)
@@ -626,7 +642,7 @@ export const prependCodexHistoryPage = (
   const nextOrderedIds = [...pageIds, ...existingIds]
   const nextItems = nextOrderedIds.flatMap((itemId) => {
     const item =
-      state.itemsById[itemId] ??
+      state.itemsById[codexItemKey(state, threadId, itemId)] ??
       page.items.find((candidate) => candidate.header.item_id === itemId)
     if (!item) return []
     return [isCodexTimelineItem(item) ? boundTimelineItem(item) : item]
@@ -637,7 +653,7 @@ export const prependCodexHistoryPage = (
       ...state.itemsById,
       ...Object.fromEntries(
         page.items.map((item) => [
-          item.header.item_id,
+          codexItemKey(state, threadId, item.header.item_id),
           boundTimelineItem(item),
         ]),
       ),
@@ -660,7 +676,7 @@ export const prependCodexHistoryPage = (
       ...state.itemSourceById,
       ...Object.fromEntries(
         page.items.map((item) => [
-          item.header.item_id,
+          codexItemKey(state, threadId, item.header.item_id),
           CodexTimelineItemSource.Snapshot,
         ]),
       ),
@@ -731,7 +747,7 @@ const rebuildTimelineCacheForThread = (
 ): CodexSessionProjection => {
   const orderedIds = state.orderedItemIdsByThread[threadId] ?? []
   const timeline = orderedIds.flatMap((itemId) => {
-    const item = state.itemsById[itemId]
+    const item = state.itemsById[codexItemKey(state, threadId, itemId)]
     return item ? [item] : []
   })
   return {
@@ -783,7 +799,7 @@ const applyItemDelta = (
     { kind: CodexRealtimeEventType.ItemDelta }
   >,
 ): CodexSessionProjection => {
-  const existing = state.itemsById[detail.item_id]
+  const existing = state.itemsById[codexItemKey(state, detail.thread_id, detail.item_id)]
   const item: CodexTextTimelineItem = {
     header: {
       item_id: detail.item_id,
@@ -814,6 +830,11 @@ export const reduceCodexRealtimeEvent = (
   event: CodexRealtimeEvent,
 ): CodexSessionProjection => {
   const detail = event.detail
+  const covered = event.header.thread_id ? state.snapshotSourceByThread[event.header.thread_id] : undefined
+  if (covered && event.header.source_epoch === covered.epoch && event.header.source_seq != null &&
+      event.header.source_seq <= covered.seq && event.header.item_id && covered.itemIds[event.header.item_id] &&
+      [CodexRealtimeEventType.ItemDelta, CodexRealtimeEventType.ItemUpsert,
+       CodexRealtimeEventType.TurnPlanUpdated, CodexRealtimeEventType.TurnDiffUpdated].includes(detail.kind)) return state
   const activityState = [
     CodexRealtimeEventType.TurnStarted,
     CodexRealtimeEventType.TurnCompleted,
@@ -865,6 +886,14 @@ export const reduceCodexRealtimeEvent = (
       )
       const snapshotMetadata: CodexSessionProjection = {
         ...state,
+        snapshotSourceByThread: {
+          ...state.snapshotSourceByThread,
+          ...(detail.source_epoch && detail.source_seq != null ? { [threadId]: {
+            epoch: detail.source_epoch,
+            seq: detail.source_seq,
+            itemIds: Object.fromEntries(detail.items.filter(item => detail.turns.some(turn => turn.turn_id === item.header.turn_id && turn.items_complete)).map(item => [item.header.item_id, true as const])),
+          }} : {}),
+        },
         threadsById: {
           ...state.threadsById,
           [threadId]: mergedThread,
@@ -1048,6 +1077,7 @@ const coalesceAdjacentItemDeltas = (
   for (const event of events) {
     const previous = reducedEvents.at(-1)
     if (
+      previous?.header.source_seq == null && event.header.source_seq == null &&
       previous?.detail.kind === CodexRealtimeEventType.ItemDelta &&
       event.detail.kind === CodexRealtimeEventType.ItemDelta &&
       previous.detail.item_id === event.detail.item_id &&

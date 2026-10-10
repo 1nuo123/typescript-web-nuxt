@@ -3,6 +3,11 @@
     <header class="border-b border-line pb-5">
       <h1 class="m-0 text-xl font-semibold">验证电脑</h1>
     </header>
+    <AppAlert v-if="flowError" variant="warning" title="连接尚未完成" :description="flowError" />
+    <BaseButton v-if="!connectedHost" variant="secondary" :loading="restarting" @click="continueConnection">
+      已安装，继续连接
+    </BaseButton>
+    <p v-if="hostStatusLoaded && !agentRelease?.download_url" class="m-0 text-sm text-ink-muted">暂未发布可下载版本。</p>
 
     <AppAlert
       v-if="isInternalRelease"
@@ -242,11 +247,12 @@ const browserOrigin = ref('')
 const hostStatusLoaded = ref(false)
 const ENROLLMENT_POLL_INTERVAL_MS = 1_000
 const ENROLLMENT_POLL_MAXIMUM_ATTEMPTS = 300
-const MANUAL_FALLBACK_REVEAL_DELAY_MS = 5_000
-const CONNECTED_WORKSPACE_POLL_ATTEMPTS = 30
+const CONNECTED_WORKSPACE_POLL_ATTEMPTS = 300
+const flowError = ref('')
+const restarting = ref(false)
 let pollingStopped = false
 let pollingTimer: ReturnType<typeof setTimeout> | null = null
-let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+let resolvePoll: (() => void) | null = null
 
 const fallbackVerificationUrl = computed(() => {
   const normalizedCode = userCode.value.trim().toUpperCase()
@@ -258,21 +264,22 @@ const fallbackVerificationUrl = computed(() => {
 
 const connectedHost = computed(
   () =>
-    devicesStore.hosts.find((host) => host.status === CodexHostStatus.Online) ??
+    devicesStore.hosts.find((host) => host.status === CodexHostStatus.Online &&
+      host.host_id === devicesStore.verification?.hostId) ??
     null,
 )
 
 const isInternalRelease = computed(
-  () => agentRelease.value?.distribution_mode === 'internal',
+  () => !!agentRelease.value?.download_url && agentRelease.value.distribution_mode === 'internal',
 )
 
 const canDownloadAgent = computed(
-  () => !isInternalRelease.value || internalReleaseAcknowledged.value,
+  () => Boolean(agentRelease.value?.download_url) && (!isInternalRelease.value || internalReleaseAcknowledged.value),
 )
 
 const resultLabel = computed(() => {
   const state = devicesStore.verification?.state
-  if (state === DeviceAuthorizationState.Approved) return '电脑已批准'
+  if (state === DeviceAuthorizationState.Approved) return '电脑已批准，等待本机选择项目目录并上线'
   if (state === DeviceAuthorizationState.Denied) return '电脑已拒绝'
   if (state === DeviceAuthorizationState.Expired) return '授权已过期'
   return '授权状态已更新'
@@ -286,48 +293,92 @@ const resultVariant = computed<'success' | 'warning' | 'danger'>(() => {
 })
 
 const readAuthorization = async () => {
-  await devicesStore.readAuthorization(userCode.value)
+  flowError.value = ''
+  try {
+    await devicesStore.readAuthorization(userCode.value)
+  } catch {
+    flowError.value = devicesStore.errorLabel() || '无法读取授权，请检查用户代码后重试。'
+  }
 }
 
 const decide = async (decision: DeviceAuthorizationDecision) => {
-  await devicesStore.decideAuthorization(decision)
-  if (decision === DeviceAuthorizationDecision.Approve) {
-    await waitForConnectedWorkspace()
-    await navigateTo('/codex/tasks')
+  try {
+    await devicesStore.decideAuthorization(decision)
+    if (decision === DeviceAuthorizationDecision.Approve) await waitForConnectedWorkspace()
+  } catch {
+    flowError.value = devicesStore.errorLabel() || '授权未完成，请重试。'
+  }
+}
+
+const continueConnection = async (): Promise<void> => {
+  if (restarting.value) return
+  restarting.value = true
+  flowError.value = ''
+  try {
+    if (devicesStore.verification?.state === DeviceAuthorizationState.Approved) {
+      await waitForConnectedWorkspace()
+      return
+    }
+    const enrollment = await new CodexEnrollmentClient().create()
+    if (!('launch_uri' in enrollment.detail)) throw new Error('连接请求未签发')
+    intentId.value = enrollment.header.intent_id
+    devicesStore.clearVerification()
+    showManualFallback.value = false
+    window.location.assign(enrollment.detail.launch_uri)
+    await pollEnrollmentIntent()
+  } catch {
+    flowError.value = '无法继续连接，请重试；跨设备连接可使用用户代码。'
+  } finally {
+    restarting.value = false
   }
 }
 
 const downloadAgent = (): void => {
-  if (agentRelease.value && canDownloadAgent.value)
+  if (agentRelease.value?.download_url && canDownloadAgent.value)
     window.location.assign(agentRelease.value.download_url)
 }
 
 const openTasks = async (): Promise<void> => {
-  await navigateTo('/codex/tasks')
+  await waitForConnectedWorkspace()
 }
 
 const waitForConnectedWorkspace = async (): Promise<void> => {
   const sessionStore = useCodexSessionStore()
+  const targetHostId = devicesStore.verification?.hostId
+  if (!targetHostId) return
+  try {
+    await createCodexHostsClient().activate(targetHostId)
+  } catch (error) {
+    flowError.value = error instanceof Error ? error.message : "切换电脑失败。"
+    return
+  }
   for (
     let attempt = 0;
-    attempt < CONNECTED_WORKSPACE_POLL_ATTEMPTS;
+    attempt < CONNECTED_WORKSPACE_POLL_ATTEMPTS && !pollingStopped;
     attempt += 1
   ) {
     try {
       await sessionStore.loadHosts()
-      if (sessionStore.selectedHostId) {
-        await sessionStore.selectHost(sessionStore.selectedHostId)
-        if (sessionStore.selectedWorkspaceId) return
+      if (sessionStore.hosts.some(host => host.host_id === targetHostId && host.status === CodexHostStatus.Online)) {
+        await sessionStore.selectHost(targetHostId)
+        if (sessionStore.selectedWorkspaceId) {
+          await navigateTo({ path: '/codex/tasks', query: {
+            hostId: targetHostId, workspaceId: sessionStore.selectedWorkspaceId,
+          } })
+          return
+        }
       }
     } catch {
       // Agent 完成本机目录选择前，控制面可能尚未出现工作区，继续短时轮询。
     }
     await waitForNextPoll()
   }
+  if (!pollingStopped) flowError.value = '仍未收到本机项目，请完成目录选择后点击继续连接。'
 }
 
 const waitForNextPoll = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
+    resolvePoll = resolve
     pollingTimer = setTimeout(resolve, ENROLLMENT_POLL_INTERVAL_MS)
   })
 }
@@ -372,9 +423,6 @@ onMounted(async () => {
   hostStatusLoaded.value = true
   if (connectedHost.value) return
   if (intentId.value) {
-    fallbackTimer = setTimeout(() => {
-      showManualFallback.value = true
-    }, MANUAL_FALLBACK_REVEAL_DELAY_MS)
     try {
       await pollEnrollmentIntent()
     } catch {
@@ -388,6 +436,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   pollingStopped = true
   if (pollingTimer !== null) clearTimeout(pollingTimer)
-  if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+  resolvePoll?.()
 })
 </script>

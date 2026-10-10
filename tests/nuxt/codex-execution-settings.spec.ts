@@ -25,6 +25,10 @@ const REVALIDATED_PREFERENCES: CodexWorkspaceExecutionPreferencesResult = {
     sandbox_mode: CodexSandboxMode.WorkspaceWrite,
     approval_policy: CodexApprovalPolicy.Untrusted,
     capabilities_revision: 'a'.repeat(64),
+    requested: { model: null, reasoning_effort: null, permission_mode: 'inherit' },
+    local_revision: 0,
+    applied_state: 'saved',
+    error: null,
   },
   adjusted_fields: ['model', 'sandbox_mode', 'capabilities_revision'],
 }

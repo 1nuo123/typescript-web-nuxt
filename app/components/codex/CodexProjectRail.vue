@@ -211,13 +211,10 @@ const selectWorkspace = async (workspaceId: string): Promise<void> => {
 }
 
 const createConversation = async (): Promise<void> => {
-  const previousIds = new Set(
-    sessionStore.threads.map((thread) => thread.upstream_thread_id),
-  )
   creating.value = true
   try {
     await sessionStore.createThread()
-    const created = await sessionStore.waitForCreatedThread(previousIds)
+    const created = await sessionStore.waitForCreatedThread()
     if (!created) return
     sessionStore.clearPendingThreadStart()
     await navigateTo(

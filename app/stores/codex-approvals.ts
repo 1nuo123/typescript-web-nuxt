@@ -23,6 +23,7 @@ const STEP_UP_REQUIRED_DECISIONS = new Set<CodexApprovalDecision>([
 interface CodexApprovalStateModel {
   approvalsById: Record<string, CodexApproval>
   loading: boolean
+  initialized: boolean
   decisionStateById: Record<string, CodexApprovalDecisionState>
   decisionErrorById: Record<string, string>
   lastResolvedApproval: CodexApproval | null
@@ -49,6 +50,7 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
   state: (): CodexApprovalStateModel => ({
     approvalsById: {},
     loading: false,
+    initialized: false,
     decisionStateById: {},
     decisionErrorById: {},
     lastResolvedApproval: null,
@@ -97,6 +99,7 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
         for (const value of collection.items) {
           this.upsert(normalizeCodexApproval(value))
         }
+        this.initialized = true
       })()
       approvalsLoadInFlight = request
       try {
