@@ -1,8 +1,5 @@
 services:
   frontend:
-    build:
-      args:
-        NODE_BUILD_MAX_OLD_SPACE_SIZE: "1024"
     cpus: "0.20"
     mem_limit: 160m
     pids_limit: 128
