@@ -30,6 +30,7 @@ export enum CodexThreadHistoryStatus {
   NotRequested = 'not_requested',
   OmittedTooLarge = 'omitted_too_large',
   NotAvailableYet = 'not_available_yet',
+  NotMaterialized = 'not_materialized',
 }
 
 export interface CodexThread {

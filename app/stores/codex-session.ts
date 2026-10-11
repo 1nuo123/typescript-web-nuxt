@@ -21,9 +21,9 @@ import {
   type CodexRealtimeConnectionStatus,
   type CodexRealtimeEvent,
 } from '~/types/codex-realtime'
-import type {
-  CodexExecutionOptions,
-  CodexThread,
+import {
+  type CodexExecutionOptions,
+  type CodexThread,
   CodexThreadHistoryStatus,
 } from '~/types/codex-thread'
 import type { CodexOperationAccepted } from '~/types/codex-turn'
@@ -98,7 +98,6 @@ interface CodexSessionStoreState {
   pendingThreadStart: PendingCodexThreadStart | null
   resumedThreadIds: string[]
   lastError: ApiErrorPayload | null
-  executionOptions: CodexExecutionOptions
   threadSearchTerm: string
   showArchivedThreads: boolean
   threadNextCursor: string | null
@@ -226,7 +225,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
     pendingThreadStart: null,
     resumedThreadIds: [],
     lastError: null,
-    executionOptions: { ...DEFAULT_CODEX_EXECUTION_OPTIONS },
     threadSearchTerm: '',
     showArchivedThreads: false,
     threadNextCursor: null,
@@ -255,6 +253,10 @@ export const useCodexSessionStore = defineStore('codex-session', {
       return state.selectedWorkspaceId
         ? (state.projection.workspacesById[state.selectedWorkspaceId] ?? null)
         : null
+    },
+    /** 执行参数始终派生自当前项目，路由恢复和实时更新不维护第二份状态。 */
+    executionOptions(): CodexExecutionOptions {
+      return toCodexExecutionOptions(this.selectedWorkspace?.execution_preferences)
     },
     threads(state): CodexThread[] {
       const normalizedSearchTerm = state.threadSearchTerm
@@ -399,7 +401,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
         this.restoreWorkspace(workspaceId)
         await this.loadThreads(workspaceId)
       } else this.workspaceSelectionState = WorkspaceSelectionState.Missing
-      this.resetExecutionOptions()
     },
 
     async loadWorkspaces(): Promise<void> {
@@ -423,7 +424,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
           collection.items,
         )
         this.reconcileSelections()
-        this.resetExecutionOptions()
       })()
       workspacesLoadInFlight = { key: hostId, promise: request }
       try {
@@ -516,9 +516,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
           execution_preferences: result.effective_preferences,
         }
       }
-      this.executionOptions = toCodexExecutionOptions(
-        result.effective_preferences,
-      )
       this.clearPendingThreadStart()
     },
 
@@ -1049,6 +1046,17 @@ export const useCodexSessionStore = defineStore('codex-session', {
       if (this.resumedThreadIds.includes(this.selectedThreadId)) return
       const hostId = this.selectedHostId
       const threadId = this.selectedThreadId
+      const thread = this.selectedThread
+      // A just-created thread has no upstream rollout until its first turn.
+      // Starting that turn is the materialization step; resume applies only to
+      // threads whose official history already exists.
+      if (
+        thread?.source_kind === 'remote' &&
+        !thread.turn_runtime &&
+        this.selectedHistoryStatus === CodexThreadHistoryStatus.NotMaterialized
+      ) {
+        return
+      }
       const accepted = await createCodexThreadsClient().resume(
         hostId,
         threadId,
@@ -1235,7 +1243,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
         if (hostId) {
           await Promise.all([this.loadWorkspaces(), this.loadThreads()])
           if (!isCurrentSelection()) return
-          this.resetExecutionOptions()
         }
         if (!threadId) return
         let lastError: unknown
@@ -1463,7 +1470,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
       this.pendingThreadStart = null
       this.resumedThreadIds = []
       this.lastError = null
-      this.executionOptions = { ...DEFAULT_CODEX_EXECUTION_OPTIONS }
       this.threadSearchTerm = ''
       this.showArchivedThreads = false
       this.threadNextCursor = null
@@ -1474,10 +1480,5 @@ export const useCodexSessionStore = defineStore('codex-session', {
       this.snapshotRecoveryGeneration += 1
     },
 
-    resetExecutionOptions(): void {
-      this.executionOptions = toCodexExecutionOptions(
-        this.selectedWorkspace?.execution_preferences,
-      )
-    },
   },
 })
