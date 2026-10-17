@@ -22,7 +22,9 @@ const NORMAL_EVENT_FRAME_WINDOW_MS = 40
 const NORMAL_CLOSE_CODE = 1_000
 const OFFLINE_CLOSE_CODE = 4_001
 const PROTOCOL_CLOSE_CODE = 4_002
-const RETRIABLE_HTTP_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504])
+const RETRIABLE_HTTP_STATUS_CODES = new Set([
+  408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524,
+])
 
 /** 浏览器非标准 Network Information API 的受控最小边界。 */
 interface CodexNetworkInformation {
@@ -188,6 +190,7 @@ export const useCodexRealtime = () => {
     clearTimers()
     clearProjectionQueue()
     const previousSocket = socket
+    realtimeStore.connectedAt = null
     socket = null
     return previousSocket
   }
@@ -457,7 +460,6 @@ export const useCodexRealtime = () => {
       socket = socketRef
       socketRef.addEventListener('open', () => {
         if (!isCurrent(generation)) return
-        realtimeStore.markConnected()
         resetIdleTimer(generation, socketRef)
       })
       socketRef.addEventListener('message', (message) =>
@@ -556,7 +558,21 @@ export const useCodexRealtime = () => {
     realtimeStore.markOffline()
   }
   const handleVisibilityChange = (): void => {
-    if (document.visibilityState === 'visible' && !socket) {
+    if (document.visibilityState !== 'visible') return
+    const lastActivity =
+      realtimeStore.lastMessageAt ?? realtimeStore.connectedAt
+    if (
+      socket &&
+      lastActivity !== null &&
+      Date.now() - lastActivity >= DEFAULT_IDLE_TIMEOUT_MS
+    ) {
+      const staleSocket = invalidateConnectionAttempt()
+      staleSocket?.close(
+        OFFLINE_CLOSE_CODE,
+        '实时连接长时间无响应，恢复后重新核对。',
+      )
+    }
+    if (!socket) {
       performanceDiagnostics.record({
         metric: ClientPerformanceMetric.ReconnectAttempt,
         observation: ClientPerformanceObservation.VisibilityResume,

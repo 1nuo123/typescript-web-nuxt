@@ -27,7 +27,7 @@ const props = defineProps<{
 const message = computed(() => {
   if (props.error) return props.error
   if (props.status === CodexRealtimeConnectionStatus.Offline) {
-    return '网络已断开；本机会话会继续，联网后自动恢复权威状态。'
+    return '浏览器网络已断开；联网后自动恢复实时服务。电脑执行状态以主机状态为准。'
   }
   if (props.status === CodexRealtimeConnectionStatus.Incompatible) {
     return '实时协议不兼容，请刷新客户端或检查服务端版本。'
@@ -35,8 +35,8 @@ const message = computed(() => {
   if (props.status === CodexRealtimeConnectionStatus.Reconnecting) {
     const close = props.lastClose
     return close
-      ? `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次，连接代码 ${close.code}）…`
-      : `正在重新连接（第 ${props.reconnectAttempt ?? 1} 次）…`
+      ? `正在重新连接实时服务（第 ${props.reconnectAttempt ?? 1} 次，连接代码 ${close.code}）…`
+      : `正在重新连接实时服务（第 ${props.reconnectAttempt ?? 1} 次）…`
   }
   if (props.status === CodexRealtimeConnectionStatus.Resyncing) {
     return '正在同步权威状态，暂时冻结写入。'
@@ -44,6 +44,6 @@ const message = computed(() => {
   if (props.status === CodexRealtimeConnectionStatus.AuthBlocked) {
     return '登录状态已失效，请重新登录。'
   }
-  return '正在连接本机 Codex…'
+  return '正在连接实时服务…'
 })
 </script>

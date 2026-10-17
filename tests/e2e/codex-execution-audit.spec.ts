@@ -236,6 +236,30 @@ test.describe('Codex execution audit browser flow', () => {
           window.setTimeout(() => {
             this.readyState = 1
             this.dispatchEvent(new Event('open'))
+            this.emit(
+              JSON.stringify({
+                header: {
+                  kind: 'codex_realtime_event',
+                  schema_version: '2.0',
+                  stream_epoch: 'codex-browser-stream-v2',
+                  cursor: null,
+                  event_id: crypto.randomUUID(),
+                  occurred_at: new Date().toISOString(),
+                  host_id: '00000000-0000-0000-0000-000000000000',
+                  workspace_id: null,
+                  thread_id: null,
+                  turn_id: null,
+                  item_id: null,
+                  detail_kind: 'connection.ready',
+                },
+                detail: {
+                  schema_version: '2.0',
+                  kind: 'connection.ready',
+                  heartbeat_interval: 15,
+                  server_time: new Date().toISOString(),
+                },
+              }),
+            )
           }, 0)
         }
 
@@ -345,6 +369,18 @@ test.describe('Codex execution audit browser flow', () => {
           replayed: false,
         })
       }
+      if (url.pathname === '/codex/hosts/host-1/operations/resume-1') {
+        return fulfill({
+          operation_id: 'resume-1',
+          command_id: 'resume-1',
+          host_id: 'host-1',
+          workspace_id: 'workspace-1',
+          thread_id: 'thread-1',
+          status: 'completed',
+          error_code: null,
+          updated_at: NOW,
+        })
+      }
       if (url.pathname === '/codex/hosts/host-1/threads/thread-1/turns') {
         failNextThreadList = true
         return fulfill({
@@ -421,7 +457,9 @@ test.describe('Codex execution audit browser flow', () => {
       .filter({ hasText: '很长的目录/子目录/你好世界.txt' })
     await expect(firstApproval).toContainText('+ e2e file content')
     await firstApproval.getByRole('button', { name: '允许一次' }).click()
-    await expect(page.getByText('正在交付')).toBeVisible()
+    await expect(
+      page.getByText('审批结果已提交，正在等待 Agent 确认应用。'),
+    ).toBeVisible()
 
     await page.evaluate(
       (event) => {
@@ -615,6 +653,30 @@ test.describe('Codex execution audit browser flow', () => {
           window.setTimeout(() => {
             this.readyState = 1
             this.dispatchEvent(new Event('open'))
+            this.emit(
+              JSON.stringify({
+                header: {
+                  kind: 'codex_realtime_event',
+                  schema_version: '2.0',
+                  stream_epoch: 'codex-browser-stream-v2',
+                  cursor: null,
+                  event_id: crypto.randomUUID(),
+                  occurred_at: new Date().toISOString(),
+                  host_id: '00000000-0000-0000-0000-000000000000',
+                  workspace_id: null,
+                  thread_id: null,
+                  turn_id: null,
+                  item_id: null,
+                  detail_kind: 'connection.ready',
+                },
+                detail: {
+                  schema_version: '2.0',
+                  kind: 'connection.ready',
+                  heartbeat_interval: 15,
+                  server_time: new Date().toISOString(),
+                },
+              }),
+            )
           }, 0)
         }
 
@@ -665,7 +727,12 @@ test.describe('Codex execution audit browser flow', () => {
           subject_id: 'subject-1',
           username: 'e2e',
           roles: ['registered_user'],
-          scopes: ['codex:read', 'codex:operate', 'codex:files', 'codex:terminal'],
+          scopes: [
+            'codex:read',
+            'codex:operate',
+            'codex:files',
+            'codex:terminal',
+          ],
           is_admin: false,
         })
       }

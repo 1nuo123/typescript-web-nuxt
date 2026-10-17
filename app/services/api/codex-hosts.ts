@@ -6,7 +6,12 @@ import type {
 } from '~/types/codex-host'
 import { createCodexApiClient } from './codex-api-client'
 
-interface ActiveHostState { active_host_id: string | null; draining_host_id: string | null; target_host_id: string | null; version: number }
+interface ActiveHostState {
+  active_host_id: string | null
+  draining_host_id: string | null
+  target_host_id: string | null
+  version: number
+}
 
 export const CODEX_HOSTS_PATH = '/codex/hosts'
 export const buildCodexHostPath = (hostId: string): string =>
@@ -15,16 +20,44 @@ export const buildCodexHostPath = (hostId: string): string =>
 export const createCodexHostsClient = () => {
   const client = createCodexApiClient()
   return {
-    activate: async (hostId: string): Promise<void> => {
-      const current = await client.get<ActiveHostState>('/codex/active-host')
+    activate: async (hostId: string, signal?: AbortSignal): Promise<void> => {
+      signal?.throwIfAborted()
+      const current = await client.get<ActiveHostState>('/codex/active-host', {
+        signal,
+      })
       if (current.active_host_id === hostId) return
-      let state = current.target_host_id === hostId ? current : await client.put<ActiveHostState>('/codex/active-host', { host_id: hostId, expected_version: current.version })
+      let state =
+        current.target_host_id === hostId
+          ? current
+          : await client.put<ActiveHostState>(
+              '/codex/active-host',
+              { host_id: hostId, expected_version: current.version },
+              { signal },
+            )
       const deadline = Date.now() + 60_000
       while (state.active_host_id !== hostId) {
-        if (state.target_host_id !== hostId) throw new Error('另一个窗口已切换电脑，请刷新。')
-        if (Date.now() >= deadline) throw new Error('仍在等待旧电脑停止 Remote 执行，请稍后核对连接状态。')
-        await new Promise(resolve => setTimeout(resolve, 750))
-        state = await client.get<ActiveHostState>('/codex/active-host')
+        if (state.target_host_id !== hostId)
+          throw new Error('另一个窗口已切换电脑，请刷新。')
+        if (Date.now() >= deadline)
+          throw new Error(
+            '仍在等待旧电脑停止 Remote 执行，请稍后核对连接状态。',
+          )
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => {
+            clearTimeout(timer)
+            reject(signal?.reason)
+          }
+          const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', abort)
+            resolve()
+          }, 750)
+          signal?.addEventListener('abort', abort, { once: true })
+          if (signal?.aborted) abort()
+        })
+        signal?.throwIfAborted()
+        state = await client.get<ActiveHostState>('/codex/active-host', {
+          signal,
+        })
       }
     },
     list: () => client.get<CodexHostCollection>(CODEX_HOSTS_PATH),

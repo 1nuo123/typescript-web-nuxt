@@ -114,6 +114,13 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
       }
       if (event.detail.kind === CodexRealtimeEventType.ConnectionReady) {
         this.markConnected()
+      } else if (
+        event.detail.kind === CodexRealtimeEventType.ConnectionHeartbeat &&
+        this.connectedAt !== null &&
+        Date.now() > this.connectedAt
+      ) {
+        // 应用ready之后收到服务端心跳才确认健康，握手即断不会重置退避。
+        this.reconnectAttempt = 0
       }
       return isNewEpoch
         ? CodexRealtimeApplyResult.NewStreamEpoch
@@ -128,7 +135,6 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
 
     markConnected(): void {
       this.status = CodexRealtimeConnectionStatus.Connected
-      this.reconnectAttempt = 0
       this.lastError = null
       this.connectedAt ??= Date.now()
     },

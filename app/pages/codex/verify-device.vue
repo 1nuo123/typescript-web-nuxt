@@ -3,11 +3,26 @@
     <header class="border-b border-line pb-5">
       <h1 class="m-0 text-xl font-semibold">验证电脑</h1>
     </header>
-    <AppAlert v-if="flowError" variant="warning" title="连接尚未完成" :description="flowError" />
-    <BaseButton v-if="!connectedHost" variant="secondary" :loading="restarting" @click="continueConnection">
+    <AppAlert
+      v-if="flowError"
+      variant="warning"
+      title="连接尚未完成"
+      :description="flowError"
+    />
+    <BaseButton
+      v-if="!connectedHost"
+      variant="secondary"
+      :loading="restarting"
+      @click="continueConnection"
+    >
       已安装，继续连接
     </BaseButton>
-    <p v-if="hostStatusLoaded && !agentRelease?.download_url" class="m-0 text-sm text-ink-muted">暂未发布可下载版本。</p>
+    <p
+      v-if="hostStatusLoaded && !agentRelease?.download_url"
+      class="m-0 text-sm text-ink-muted"
+    >
+      暂未发布可下载版本。
+    </p>
 
     <AppAlert
       v-if="isInternalRelease"
@@ -222,6 +237,7 @@ import {
 } from '~/types/codex-device'
 import { CodexEnrollmentIntentState } from '~/types/codex-enrollment'
 import { LOGIN_ROUTE } from '~/types/routes'
+import { normalizeApiError } from '~/utils/errors'
 
 definePageMeta({
   layout: 'codex',
@@ -247,9 +263,11 @@ const browserOrigin = ref('')
 const hostStatusLoaded = ref(false)
 const ENROLLMENT_POLL_INTERVAL_MS = 1_000
 const ENROLLMENT_POLL_MAXIMUM_ATTEMPTS = 300
-const CONNECTED_WORKSPACE_POLL_ATTEMPTS = 300
+const CONNECTED_WORKSPACE_TIMEOUT_MS = 300_000
+let workspaceWaitInFlight: Promise<void> | null = null
 const flowError = ref('')
 const restarting = ref(false)
+const connectionWaitAbort = new AbortController()
 let pollingStopped = false
 let pollingTimer: ReturnType<typeof setTimeout> | null = null
 let resolvePoll: (() => void) | null = null
@@ -264,22 +282,29 @@ const fallbackVerificationUrl = computed(() => {
 
 const connectedHost = computed(
   () =>
-    devicesStore.hosts.find((host) => host.status === CodexHostStatus.Online &&
-      host.host_id === devicesStore.verification?.hostId) ??
-    null,
+    devicesStore.hosts.find(
+      (host) =>
+        host.status === CodexHostStatus.Online &&
+        host.host_id === devicesStore.verification?.hostId,
+    ) ?? null,
 )
 
 const isInternalRelease = computed(
-  () => !!agentRelease.value?.download_url && agentRelease.value.distribution_mode === 'internal',
+  () =>
+    !!agentRelease.value?.download_url &&
+    agentRelease.value.distribution_mode === 'internal',
 )
 
 const canDownloadAgent = computed(
-  () => Boolean(agentRelease.value?.download_url) && (!isInternalRelease.value || internalReleaseAcknowledged.value),
+  () =>
+    Boolean(agentRelease.value?.download_url) &&
+    (!isInternalRelease.value || internalReleaseAcknowledged.value),
 )
 
 const resultLabel = computed(() => {
   const state = devicesStore.verification?.state
-  if (state === DeviceAuthorizationState.Approved) return '电脑已批准，等待本机选择项目目录并上线'
+  if (state === DeviceAuthorizationState.Approved)
+    return '电脑已批准，等待本机选择项目目录并上线'
   if (state === DeviceAuthorizationState.Denied) return '电脑已拒绝'
   if (state === DeviceAuthorizationState.Expired) return '授权已过期'
   return '授权状态已更新'
@@ -297,14 +322,16 @@ const readAuthorization = async () => {
   try {
     await devicesStore.readAuthorization(userCode.value)
   } catch {
-    flowError.value = devicesStore.errorLabel() || '无法读取授权，请检查用户代码后重试。'
+    flowError.value =
+      devicesStore.errorLabel() || '无法读取授权，请检查用户代码后重试。'
   }
 }
 
 const decide = async (decision: DeviceAuthorizationDecision) => {
   try {
     await devicesStore.decideAuthorization(decision)
-    if (decision === DeviceAuthorizationDecision.Approve) await waitForConnectedWorkspace()
+    if (decision === DeviceAuthorizationDecision.Approve)
+      await waitForConnectedWorkspace()
   } catch {
     flowError.value = devicesStore.errorLabel() || '授权未完成，请重试。'
   }
@@ -315,7 +342,9 @@ const continueConnection = async (): Promise<void> => {
   restarting.value = true
   flowError.value = ''
   try {
-    if (devicesStore.verification?.state === DeviceAuthorizationState.Approved) {
+    if (
+      devicesStore.verification?.state === DeviceAuthorizationState.Approved
+    ) {
       await waitForConnectedWorkspace()
       return
     }
@@ -342,38 +371,90 @@ const openTasks = async (): Promise<void> => {
   await waitForConnectedWorkspace()
 }
 
-const waitForConnectedWorkspace = async (): Promise<void> => {
+const waitForConnectedWorkspace = (): Promise<void> => {
+  if (workspaceWaitInFlight) return workspaceWaitInFlight
+  workspaceWaitInFlight = pollConnectedWorkspace().finally(() => {
+    workspaceWaitInFlight = null
+  })
+  return workspaceWaitInFlight
+}
+
+const pollConnectedWorkspace = async (): Promise<void> => {
   const sessionStore = useCodexSessionStore()
   const targetHostId = devicesStore.verification?.hostId
-  if (!targetHostId) return
+  if (!targetHostId || pollingStopped) return
+  const deadline = Date.now() + CONNECTED_WORKSPACE_TIMEOUT_MS
+  let online = false
+  let lastError = ''
   try {
-    await createCodexHostsClient().activate(targetHostId)
+    await createCodexHostsClient().activate(
+      targetHostId,
+      connectionWaitAbort.signal,
+    )
   } catch (error) {
-    flowError.value = error instanceof Error ? error.message : "切换电脑失败。"
+    if (!pollingStopped)
+      flowError.value = normalizeApiError(error).message || '切换电脑失败。'
     return
   }
-  for (
-    let attempt = 0;
-    attempt < CONNECTED_WORKSPACE_POLL_ATTEMPTS && !pollingStopped;
-    attempt += 1
-  ) {
+  while (Date.now() < deadline && !pollingStopped) {
     try {
       await sessionStore.loadHosts()
-      if (sessionStore.hosts.some(host => host.host_id === targetHostId && host.status === CodexHostStatus.Online)) {
+      if (pollingStopped) return
+      online = sessionStore.hosts.some(
+        (host) =>
+          host.host_id === targetHostId &&
+          host.status === CodexHostStatus.Online,
+      )
+      const host = sessionStore.hosts.find(
+        (host) => host.host_id === targetHostId,
+      )
+      if (host?.status === CodexHostStatus.Revoked) {
+        flowError.value = '这台电脑的授权已撤销，请重新连接并授权。'
+        return
+      }
+      if (online) {
         await sessionStore.selectHost(targetHostId)
+        if (pollingStopped) return
         if (sessionStore.selectedWorkspaceId) {
-          await navigateTo({ path: '/codex/tasks', query: {
-            hostId: targetHostId, workspaceId: sessionStore.selectedWorkspaceId,
-          } })
+          await navigateTo({
+            path: '/codex/tasks',
+            query: {
+              hostId: targetHostId,
+              workspaceId: sessionStore.selectedWorkspaceId,
+            },
+          })
           return
         }
       }
-    } catch {
-      // Agent 完成本机目录选择前，控制面可能尚未出现工作区，继续短时轮询。
+      lastError = ''
+    } catch (error) {
+      if (pollingStopped) return
+      const normalized = normalizeApiError(error)
+      if ([401, 403].includes(normalized.statusCode)) {
+        flowError.value =
+          normalized.statusCode === 401
+            ? '登录授权已失效，请重新登录。'
+            : '请求被拒绝，请核对账号权限或网关策略。'
+        return
+      }
+      if (
+        ![408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524].includes(
+          normalized.statusCode,
+        )
+      ) {
+        flowError.value = normalized.message
+        return
+      }
+      lastError = '控制面或网关暂时不可达；已保留电脑授权，恢复后点击继续连接。'
     }
     await waitForNextPoll()
   }
-  if (!pollingStopped) flowError.value = '仍未收到本机项目，请完成目录选择后点击继续连接。'
+  if (!pollingStopped)
+    flowError.value =
+      lastError ||
+      (online
+        ? '电脑已上线，但尚未同步项目。请在本机确认目录与执行配置后继续。'
+        : '电脑尚未上线。请检查本机 Agent 是否运行及网络状态，无需重新绑定。')
 }
 
 const waitForNextPoll = async (): Promise<void> => {
@@ -435,6 +516,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   pollingStopped = true
+  connectionWaitAbort.abort()
   if (pollingTimer !== null) clearTimeout(pollingTimer)
   resolvePoll?.()
 })
