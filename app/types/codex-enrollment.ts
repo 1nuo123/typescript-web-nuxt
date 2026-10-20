@@ -26,6 +26,7 @@ export interface CodexEnrollmentIntentStatusDetail {
   expires_at: string
   user_code: string | null
   authorization: DeviceAuthorizationEnvelope | null
+  host_id?: string | null
 }
 
 export interface CodexEnrollmentIntentEnvelope {

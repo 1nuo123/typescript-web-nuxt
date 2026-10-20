@@ -20,6 +20,7 @@ interface CodexRealtimeStoreState {
   lastError: string | null
   lastMessageAt: number | null
   connectedAt: number | null
+  channelReady: boolean
   lastClose: {
     code: number
     wasClean: boolean
@@ -50,6 +51,7 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
     lastError: null,
     lastMessageAt: null,
     connectedAt: null,
+    channelReady: false,
     lastClose: null,
   }),
   actions: {
@@ -128,13 +130,17 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
     },
 
     markConnecting(reconnecting = false): void {
+      this.channelReady = false
       this.status = reconnecting
         ? CodexRealtimeConnectionStatus.Reconnecting
         : CodexRealtimeConnectionStatus.Connecting
     },
 
     markConnected(): void {
-      this.status = CodexRealtimeConnectionStatus.Connected
+      this.channelReady = true
+      this.status = this.gapDetected
+        ? CodexRealtimeConnectionStatus.Resyncing
+        : CodexRealtimeConnectionStatus.Connected
       this.lastError = null
       this.connectedAt ??= Date.now()
     },
@@ -171,7 +177,9 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
     },
 
     finishResync(): void {
-      this.status = CodexRealtimeConnectionStatus.Connected
+      this.status = this.channelReady
+        ? CodexRealtimeConnectionStatus.Connected
+        : CodexRealtimeConnectionStatus.Connecting
       this.gapDetected = false
       this.lastError = null
     },

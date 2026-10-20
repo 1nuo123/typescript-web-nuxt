@@ -18,6 +18,8 @@ import { normalizeApiError } from '~/utils/errors'
 const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000]
 const RECONNECT_JITTER_RATIO = 0.2
 const DEFAULT_IDLE_TIMEOUT_MS = 90_000
+// One bounded attempt covers ticket, transport and application readiness.
+const CONNECTION_ATTEMPT_TIMEOUT_MS = 30_000
 const NORMAL_EVENT_FRAME_WINDOW_MS = 40
 const NORMAL_CLOSE_CODE = 1_000
 const OFFLINE_CLOSE_CODE = 4_001
@@ -60,7 +62,10 @@ const isRealtimeBarrierEvent = (event: CodexRealtimeEvent): boolean =>
 
 const isRetriableRealtimeError = (error: unknown): boolean => {
   const normalized = normalizeApiError(error)
-  return RETRIABLE_HTTP_STATUS_CODES.has(normalized.statusCode)
+  return (
+    normalized.statusCode === 0 ||
+    RETRIABLE_HTTP_STATUS_CODES.has(normalized.statusCode)
+  )
 }
 
 const realtimeErrorMessage = (error: unknown): string => {
@@ -142,6 +147,11 @@ export const useCodexRealtime = () => {
   let socket: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let attemptTimer: ReturnType<typeof setTimeout> | null = null
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null
+  let ticketController: AbortController | null = null
+  let recoveryAttempt = 0
+  let recoveryGeneration: number | null = null
   let projectionFlushTimer: ReturnType<typeof setTimeout> | null = null
   let projectionFlushRevision = 0
   let queuedProjectionEvents: CodexRealtimeEvent[] = []
@@ -159,6 +169,12 @@ export const useCodexRealtime = () => {
   const clearTimers = (): void => {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     if (idleTimer) clearTimeout(idleTimer)
+    if (attemptTimer) clearTimeout(attemptTimer)
+    if (recoveryTimer) clearTimeout(recoveryTimer)
+    ticketController?.abort()
+    ticketController = null
+    attemptTimer = null
+    recoveryTimer = null
     reconnectTimer = null
     idleTimer = null
   }
@@ -208,13 +224,24 @@ export const useCodexRealtime = () => {
   }
 
   const refreshAuthority = async (generation: number): Promise<void> => {
+    if (!isCurrent(generation) || recoveryGeneration === generation) return
+    recoveryGeneration = generation
+    realtimeStore.beginResync()
     try {
       await sessionStore.refreshAuthority()
-      if (!isCurrent(generation) || !authorityRecoveryV2Enabled()) return
+      if (!isCurrent(generation)) return
+      recoveryAttempt = 0
       realtimeStore.finishResync()
     } catch {
-      if (isCurrent(generation))
-        realtimeStore.markError('Codex权威状态刷新失败。')
+      if (isCurrent(generation)) {
+        realtimeStore.lastError = '结果同步暂时失败，正在重试。'
+        recoveryTimer = setTimeout(() => {
+          recoveryTimer = null
+          void refreshAuthority(generation)
+        }, calculateCodexReconnectDelay(recoveryAttempt++))
+      }
+    } finally {
+      if (recoveryGeneration === generation) recoveryGeneration = null
     }
   }
 
@@ -398,6 +425,12 @@ export const useCodexRealtime = () => {
     const projectionEvents: ReturnType<typeof validateCodexRealtimeEvent>[] = []
     let recoveryRequired = false
     for (const event of events) {
+      if (event.detail.kind === CodexRealtimeEventType.ConnectionReady) {
+        if (attemptTimer) clearTimeout(attemptTimer)
+        attemptTimer = null
+        // A ready channel does not prove the current task/approval projection is fresh.
+        recoveryRequired = true
+      }
       const hadStreamEpoch = realtimeStore.streamEpoch !== null
       const result = realtimeStore.acceptEvent(event)
       if (
@@ -439,8 +472,21 @@ export const useCodexRealtime = () => {
       return
     }
     realtimeStore.markConnecting(realtimeStore.reconnectAttempt > 0)
+    ticketController = new AbortController()
+    attemptTimer = setTimeout(() => {
+      if (!isCurrent(generation)) return
+      const expiredSocket = invalidateConnectionAttempt()
+      expiredSocket?.close(OFFLINE_CLOSE_CODE, '连接服务超时。')
+      realtimeStore.markError('连接服务超时，正在重新连接。')
+      scheduleReconnect(
+        controllerGeneration,
+        ClientPerformanceObservation.RetryTimer,
+      )
+    }, CONNECTION_ATTEMPT_TIMEOUT_MS)
     try {
-      const ticket = await createCodexRealtimeClient().issueTicket()
+      const ticket = await createCodexRealtimeClient().issueTicket(
+        ticketController.signal,
+      )
       if (!isCurrent(generation)) return
       const url = resolveCodexWebSocketUrl({
         pageUrl: window.location.href,
@@ -473,6 +519,8 @@ export const useCodexRealtime = () => {
           reason: event.reason || null,
         })
         socket = null
+        if (attemptTimer) clearTimeout(attemptTimer)
+        attemptTimer = null
         if (idleTimer) clearTimeout(idleTimer)
         idleTimer = null
         if (protocolCompatible) {
@@ -488,6 +536,8 @@ export const useCodexRealtime = () => {
       })
     } catch (error) {
       if (!isCurrent(generation)) return
+      if (attemptTimer) clearTimeout(attemptTimer)
+      attemptTimer = null
       socket = null
       const normalized = normalizeApiError(error)
       if (normalized.statusCode === 401) {
@@ -581,23 +631,10 @@ export const useCodexRealtime = () => {
       void connect()
     }
   }
-  /**
-   * 移动网络从 Wi-Fi/蜂窝网络切换时，保留的 socket 可能已失效但尚未触发 close。
-   * 主动淘汰当前 generation，确保旧回调不会写回，并立即通过新的 ticket 建立连接。
-   */
+  /** 网络质量变化只触发新鲜度检查，健康连接继续使用。 */
   const handleNetworkInformationChange = (): void => {
     if (!navigator.onLine) return
-    const previousSocket = invalidateConnectionAttempt()
-    previousSocket?.close(
-      OFFLINE_CLOSE_CODE,
-      '浏览器网络状态已变化，正在重新建立Codex实时连接。',
-    )
-    performanceDiagnostics.record({
-      metric: ClientPerformanceMetric.ReconnectAttempt,
-      observation: ClientPerformanceObservation.NetworkOnline,
-      value: 1,
-    })
-    void connect()
+    handleVisibilityChange()
   }
 
   onMounted(() => {

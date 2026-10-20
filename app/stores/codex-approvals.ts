@@ -118,6 +118,9 @@ export const useCodexApprovalsStore = defineStore('codex-approvals', {
       const blockReason = getCodexRealtimeWriteBlockReason(
         useCodexRealtimeStore().status,
         'approval',
+        useCodexSessionStore().hosts.find(
+          (host) => host.host_id === approval.host_id,
+        ) ?? null,
       )
       if (blockReason) throw new Error(blockReason)
       if (

@@ -6,7 +6,9 @@ export const CODEX_REALTIME_TICKET_PATH = '/codex/realtime-tickets'
 export const createCodexRealtimeClient = () => {
   const client = createCodexApiClient()
   return {
-    issueTicket: () =>
-      client.post<CodexRealtimeTicket>(CODEX_REALTIME_TICKET_PATH),
+    issueTicket: (signal?: AbortSignal) =>
+      client.post<CodexRealtimeTicket>(CODEX_REALTIME_TICKET_PATH, undefined, {
+        signal,
+      }),
   }
 }

@@ -22,9 +22,13 @@ export class CodexEnrollmentClient {
     )
   }
 
-  read(intentId: string): Promise<CodexEnrollmentIntentEnvelope> {
+  read(
+    intentId: string,
+    signal?: AbortSignal,
+  ): Promise<CodexEnrollmentIntentEnvelope> {
     return this.client.get<CodexEnrollmentIntentEnvelope>(
       `${CODEX_ENROLLMENT_INTENTS_PATH}/${encodeURIComponent(intentId)}`,
+      { signal },
     )
   }
 

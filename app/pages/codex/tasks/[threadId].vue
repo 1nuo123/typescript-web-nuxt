@@ -285,7 +285,10 @@ const hostUnavailable = computed(
   () => sessionStore.selectedHost?.status !== CodexHostStatus.Online,
 )
 const submissionBlockReason = computed(() =>
-  getCodexTurnSubmissionBlockReason(realtimeStore.status),
+  getCodexTurnSubmissionBlockReason(
+    realtimeStore.status,
+    sessionStore.selectedHost,
+  ),
 )
 const composerDisabled = computed(
   () =>
@@ -428,7 +431,8 @@ const historyWarning = computed(() => {
   }
   if (
     sessionStore.selectedHistoryStatus ===
-    CodexThreadHistoryStatus.NotAvailableYet && sessionStore.selectedTimeline.length === 0
+      CodexThreadHistoryStatus.NotAvailableYet &&
+    sessionStore.selectedTimeline.length === 0
   ) {
     return '会话正文尚未在 App Server 中可读取。'
   }
@@ -668,7 +672,8 @@ watch(
   [
     routeContextView,
     routeContextItemId,
-    () => sessionStore.selectedThreadId === threadId.value &&
+    () =>
+      sessionStore.selectedThreadId === threadId.value &&
       (!routeHostId.value || sessionStore.selectedHostId === routeHostId.value),
   ],
   ([view, itemId, selectionReady], [previousView]) => {
