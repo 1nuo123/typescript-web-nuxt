@@ -1,5 +1,5 @@
 <template>
-  <section class="h-full min-h-0 overflow-y-auto p-4 sm:p-6">
+  <section class="codex-page h-full min-h-0 overflow-y-auto p-4 sm:p-6">
     <CodexMobilePageHeader title="审批中心" />
     <div class="mx-auto grid w-full max-w-3xl gap-5">
       <header
@@ -92,32 +92,6 @@ interface ApprovalGroup {
   submitting: boolean
 }
 
-interface ApprovalPresentation {
-  label: string
-}
-
-const approvalDecisionPresentation = {
-  [CodexApprovalDecision.Accept]: { label: '已允许' },
-  [CodexApprovalDecision.AcceptForSession]: { label: '本会话已允许' },
-  [CodexApprovalDecision.AcceptWithExecpolicyAmendment]: {
-    label: '已应用命令策略',
-  },
-  [CodexApprovalDecision.ApplyNetworkPolicyAmendment]: {
-    label: '已应用网络策略',
-  },
-  [CodexApprovalDecision.Decline]: { label: '已拒绝' },
-  [CodexApprovalDecision.Cancel]: { label: '已取消' },
-} satisfies Record<CodexApprovalDecision, ApprovalPresentation>
-
-const approvalStatePresentation = {
-  [CodexApprovalState.Pending]: { label: '等待处理' },
-  [CodexApprovalState.Claimed]: { label: '正在交付' },
-  [CodexApprovalState.Applied]: { label: '已交付' },
-  [CodexApprovalState.DeliveryFailed]: { label: '交付失败' },
-  [CodexApprovalState.Expired]: { label: '已过期' },
-  [CodexApprovalState.Cancelled]: { label: '已取消交付' },
-} satisfies Record<CodexApprovalState, ApprovalPresentation>
-
 definePageMeta({
   path: '/codex/approval-center',
   layout: 'codex',
@@ -160,13 +134,6 @@ const returnedToConversation = ref(false)
 const isSubmitting = (approval: CodexApproval): boolean =>
   approvalStore.decisionStateById[approval.approval_id] ===
   CodexApprovalDecisionState.Submitting
-
-const resolvedDecisionLabel = (approval: CodexApproval): string =>
-  approval.decision
-    ? approvalDecisionPresentation[approval.decision].label
-    : approval.state === CodexApprovalState.Expired
-      ? '未处理'
-      : approvalStatePresentation[approval.state].label
 
 const approvalGroups = computed<ApprovalGroup[]>(() => {
   const groups = new Map<string, CodexApproval[]>()

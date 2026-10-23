@@ -1,6 +1,6 @@
 <template>
   <aside
-    class="fixed top-16 left-1/2 z-40 flex w-[min(92vw,42rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning shadow-pop"
+    class="codex-approval-prompt mx-auto flex items-center gap-3 rounded-xl border border-warning/20 bg-warning-soft/60 px-3 py-2 text-sm text-warning"
     role="status"
     aria-live="polite"
   >
@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { ShieldAlert } from '@lucide/vue'
 
-/** 固定提示条只提供导航，不在会话时间线内渲染审批内容或决策控件。 */
+/** 提示条占据独立布局行，不遮挡消息；仅导航至既有审批 Surface。 */
 defineProps<{
   count: number
 }>()

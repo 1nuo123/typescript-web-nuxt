@@ -16,7 +16,7 @@
     >
       <div
         v-if="items.length > 0"
-        class="relative w-full min-w-0 max-w-full overflow-x-hidden"
+        class="codex-reading-column relative w-full min-w-0 overflow-x-hidden"
         :style="{ height: `${totalSize}px` }"
       >
         <div
@@ -56,7 +56,7 @@
     <button
       v-if="!effectiveFollowing && (items.length > 0 || working)"
       type="button"
-      class="absolute right-3 bottom-3 z-10 border border-line bg-surface px-3 py-1.5 text-xs shadow-card"
+      class="absolute right-4 bottom-3 z-10 rounded-full border border-line bg-elevated px-4 py-2 text-xs shadow-card"
       @click="handleScrollToLatest"
     >
       跳到最新
@@ -207,7 +207,8 @@ watch(
   () => [props.items, props.working] as const,
   async () => {
     await nextTick()
-    virtualizer.value.measure()
+    // Row refs and ResizeObserver retain measurements by item ID. Clearing
+    // every cached height here would replace unchanged rows with estimates.
     if (useScrollControllerV2.value) {
       onCommit()
       return
@@ -229,7 +230,6 @@ onMounted(async () => {
   if (useScrollControllerV2.value && container.value && bottomSentinel.value) {
     attach(container.value, bottomSentinel.value)
   }
-  virtualizer.value.measure()
   if (useScrollControllerV2.value) onCommit()
   else if (legacyFollowing.value && container.value)
     container.value.scrollTop = container.value.scrollHeight

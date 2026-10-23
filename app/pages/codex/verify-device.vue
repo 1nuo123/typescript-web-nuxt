@@ -1,5 +1,6 @@
 <template>
-  <section class="mx-auto grid w-full min-w-0 max-w-xl gap-6">
+  <section class="codex-page mx-auto grid w-full min-w-0 max-w-xl gap-6">
+    <CodexMobilePageHeader title="验证电脑" />
     <header class="border-b border-line pb-5">
       <h1 class="m-0 text-xl font-semibold">验证电脑</h1>
     </header>

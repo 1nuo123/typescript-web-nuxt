@@ -1,6 +1,6 @@
 <template>
   <section
-    class="mx-auto grid h-full w-full min-w-0 max-w-4xl grid-cols-1 gap-8 overflow-y-auto p-4 sm:p-6"
+    class="codex-page mx-auto grid h-full w-full min-w-0 max-w-4xl grid-cols-1 gap-8 overflow-y-auto p-4 sm:p-6"
   >
     <CodexMobilePageHeader title="电脑设置" />
     <header
@@ -157,10 +157,42 @@
           {{ notificationPermissionLabel }}
         </BaseButton>
       </div>
-      <p class="m-0 text-xs text-ink-muted">通知仅在 Remote 页面保持打开时可用。</p>
-      <p v-if="notificationPermission === 'denied'" class="m-0 text-xs text-ink-muted">
+      <p class="m-0 text-xs text-ink-muted">
+        通知仅在 Remote 页面保持打开时可用。
+      </p>
+      <p
+        v-if="notificationPermission === 'denied'"
+        class="m-0 text-xs text-ink-muted"
+      >
         请在浏览器地址栏的站点设置中允许通知，然后点击按钮重新检测。
       </p>
+    </section>
+
+    <section
+      class="codex-preference-row"
+      aria-labelledby="codex-appearance-title"
+    >
+      <div>
+        <h2 id="codex-appearance-title" class="m-0 text-sm font-medium">
+          外观
+        </h2>
+        <p class="mt-1 mb-0 text-xs text-ink-muted">选择适合你的阅读主题。</p>
+      </div>
+      <div
+        class="codex-segmented flex gap-1 rounded-lg p-1"
+        role="group"
+        aria-label="主题"
+      >
+        <BaseButton
+          v-for="theme in themeOptions"
+          :key="theme.value"
+          size="sm"
+          :variant="preference === theme.value ? 'secondary' : 'ghost'"
+          :aria-pressed="preference === theme.value"
+          @click="setTheme(theme.value)"
+          >{{ theme.label }}</BaseButton
+        >
+      </div>
     </section>
 
     <BaseModal
@@ -253,7 +285,7 @@ import {
   ShieldOff,
 } from '@lucide/vue'
 import { AuthScope } from '~/types/auth'
-import { RuntimeFeatureFlag } from '~/types/app'
+import { RuntimeFeatureFlag, type ThemePreference } from '~/types/app'
 import type { ApiErrorPayload } from '~/types/api'
 import {
   CodexEnrollmentIntentState,
@@ -288,6 +320,13 @@ definePageMeta({
   requiredRuntimeFlag: RuntimeFeatureFlag.Codex,
   title: 'Codex 电脑',
 })
+
+const { preference, setTheme } = useTheme()
+const themeOptions: { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: '跟随系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+]
 
 const realtimeStore = useCodexRealtimeStore()
 const devicesStore = useCodexDevicesStore()
@@ -381,9 +420,11 @@ const openAddDialog = () => {
 
 const requestNotificationPermission = async (): Promise<void> => {
   if (readCodexBrowserNotificationPermission() === 'default') {
-    notificationPermission.value = await requestCodexBrowserNotificationPermission()
+    notificationPermission.value =
+      await requestCodexBrowserNotificationPermission()
   } else {
-    notificationPermission.value = await refreshCodexBrowserNotificationPermission()
+    notificationPermission.value =
+      await refreshCodexBrowserNotificationPermission()
   }
 }
 

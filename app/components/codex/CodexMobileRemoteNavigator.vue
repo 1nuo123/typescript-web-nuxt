@@ -1,5 +1,7 @@
 <template>
-  <section class="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)] bg-surface">
+  <section
+    class="codex-mobile-navigator grid min-h-dvh grid-rows-[auto_minmax(0,1fr)] bg-surface"
+  >
     <header
       class="grid gap-3 border-b border-line px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3"
     >

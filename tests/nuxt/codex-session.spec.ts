@@ -140,7 +140,11 @@ describe('Codex session store', () => {
         sandbox_mode: CodexSandboxMode.WorkspaceWrite,
         approval_policy: CodexApprovalPolicy.Untrusted,
         capabilities_revision: 'revision-1',
-        requested: { model: null, reasoning_effort: null, permission_mode: 'inherit' },
+        requested: {
+          model: null,
+          reasoning_effort: null,
+          permission_mode: 'inherit',
+        },
         local_revision: 0,
         applied_state: 'unverified',
         error: null,
@@ -721,6 +725,20 @@ describe('Codex UI resource retention', () => {
     expect(store.mobilePanelOpen).toBe(false)
     expect(store.contextPanelOpen).toBe(false)
     expect(store.selectedContextItemId).toBeNull()
+  })
+
+  it('keeps focus mode across host changes and resets it on session cleanup', () => {
+    const store = useCodexUiStore()
+    store.setDraft('thread-1', '保留草稿')
+    store.toggleNavigation()
+    store.clearTransientUi()
+    expect(store.navigationCollapsed).toBe(true)
+    expect(store.draftsByThreadId['thread-1']).toBe('保留草稿')
+    store.toggleNavigation()
+    expect(store.navigationCollapsed).toBe(false)
+    store.toggleNavigation()
+    store.clearUi()
+    expect(store.navigationCollapsed).toBe(false)
   })
 
   it('keeps thread-list scroll positions in memory per filtered route', () => {

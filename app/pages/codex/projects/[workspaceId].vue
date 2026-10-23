@@ -1,5 +1,8 @@
 <template>
-  <section class="mx-auto grid w-full min-w-0 max-w-3xl grid-cols-1 gap-6">
+  <section
+    class="codex-page mx-auto grid w-full min-w-0 max-w-3xl grid-cols-1 gap-6"
+  >
+    <CodexMobilePageHeader title="项目详情" />
     <header
       class="flex items-start justify-between gap-4 border-b border-line pb-5"
     >

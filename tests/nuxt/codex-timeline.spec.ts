@@ -132,8 +132,8 @@ describe('Codex timeline item', () => {
     expect(markdown.classes()).toEqual(
       expect.arrayContaining([
         'break-words',
-        'text-sm',
-        'leading-6',
+        'text-[0.9375rem]',
+        'leading-7',
         'text-ink',
       ]),
     )
@@ -290,8 +290,8 @@ describe('Codex timeline item', () => {
     component.unmount()
   })
 
-  it('shows only a command summary in the timeline and opens output context', async () => {
-    const output = '完整命令输出不应渲染在主时间线中'
+  it('keeps command output collapsed initially and preserves the output context action', async () => {
+    const output = '原位展开或上下文均可读取完整命令输出'
     const item: CodexCommandTimelineItem = {
       header: {
         item_id: 'item-command-summary',
@@ -314,9 +314,11 @@ describe('Codex timeline item', () => {
     })
 
     expect(component.text()).toContain('pnpm test')
-    expect(component.text()).not.toContain(output)
-
-    await component.get('button').trigger('click')
+    const disclosure = component.get('details').element as HTMLDetailsElement
+    expect(disclosure.open).toBe(false)
+    expect(component.get('pre').text()).toBe(output)
+    disclosure.open = true
+    await component.get('.codex-process-context').trigger('click')
 
     expect(component.emitted('open-context')).toEqual([
       ['item-command-summary', CodexTimelineItemKind.Command],

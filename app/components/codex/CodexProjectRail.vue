@@ -1,15 +1,17 @@
 <template>
   <aside
-    class="flex min-h-0 min-w-0 flex-col border-r border-line bg-canvas"
+    class="codex-navigation flex min-h-0 min-w-0 flex-col"
     aria-label="Codex 项目导航"
   >
-    <header class="flex h-14 items-center gap-2 border-b border-line px-3">
+    <header class="codex-brand flex h-16 shrink-0 items-center gap-2.5 px-4">
       <span
         class="grid size-8 shrink-0 place-items-center rounded-md bg-primary text-canvas"
       >
         <TerminalSquare class="size-4" aria-hidden="true" />
       </span>
-      <strong class="min-w-0 truncate text-sm">Codex</strong>
+      <strong class="min-w-0 truncate text-sm tracking-tight"
+        >Codex <span class="font-normal text-ink-muted">Remote</span></strong
+      >
       <NuxtLink
         :to="CODEX_APPROVALS_ROUTE"
         class="relative ml-auto grid size-8 shrink-0 place-items-center rounded-md text-ink-muted no-underline hover:bg-surface-muted hover:text-ink"
@@ -26,7 +28,7 @@
       </NuxtLink>
     </header>
 
-    <div class="grid gap-3 border-b border-line p-3">
+    <div class="grid shrink-0 gap-2 px-3 pb-2">
       <label class="relative block min-w-0">
         <span class="sr-only">选择主机</span>
         <Monitor
@@ -61,7 +63,7 @@
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+    <div class="codex-projects min-h-0 shrink-0 overflow-y-auto px-3 py-2">
       <p
         class="m-0 px-2 pb-1.5 text-[0.6875rem] font-semibold text-ink-muted uppercase"
       >
@@ -109,8 +111,10 @@
       </div>
     </div>
 
+    <slot />
+
     <nav
-      class="grid gap-0.5 border-t border-line p-2"
+      class="codex-navigation-footer grid shrink-0 grid-cols-3 gap-1 border-t border-line p-2"
       aria-label="Codex 辅助导航"
     >
       <button

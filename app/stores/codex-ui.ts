@@ -11,6 +11,8 @@ const CODEX_DRAFT_RETENTION_LIMIT = 24
 interface CodexUiStoreState {
   draftsByThreadId: Record<string, string>
   mobilePanelOpen: boolean
+  navigationCollapsed: boolean
+  itemDisclosureOpenByThreadId: Record<string, Record<string, boolean>>
   timelineFollowByThreadId: Record<string, boolean>
   timelineScrollTopByThreadId: Record<string, number>
   threadListScrollTopByRouteKey: Record<string, number>
@@ -23,6 +25,8 @@ export const useCodexUiStore = defineStore('codex-ui', {
   state: (): CodexUiStoreState => ({
     draftsByThreadId: {},
     mobilePanelOpen: false,
+    navigationCollapsed: false,
+    itemDisclosureOpenByThreadId: {},
     timelineFollowByThreadId: {},
     timelineScrollTopByThreadId: {},
     threadListScrollTopByRouteKey: {},
@@ -31,6 +35,26 @@ export const useCodexUiStore = defineStore('codex-ui', {
     selectedContextItemId: null,
   }),
   actions: {
+    itemDisclosureOpen(
+      threadId: string,
+      itemId: string,
+      defaultOpen = false,
+    ): boolean {
+      return (
+        this.itemDisclosureOpenByThreadId[threadId]?.[itemId] ?? defaultOpen
+      )
+    },
+    setItemDisclosureOpen(
+      threadId: string,
+      itemId: string,
+      open: boolean,
+    ): void {
+      const threadChoices = (this.itemDisclosureOpenByThreadId[threadId] ??= {})
+      threadChoices[itemId] = open
+    },
+    toggleNavigation(): void {
+      this.navigationCollapsed = !this.navigationCollapsed
+    },
     setDraft(threadId: string, draft: string): void {
       this.draftsByThreadId[threadId] = draft
       const retainedEntries = Object.entries(this.draftsByThreadId).slice(

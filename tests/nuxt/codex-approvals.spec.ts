@@ -174,7 +174,7 @@ describe('Codex approval projection', () => {
     component.unmount()
   })
 
-  it('renders a fixed approval prompt that navigates without embedding decision controls', async () => {
+  it('renders an inline approval prompt that navigates without embedding decision controls', async () => {
     const component = await mountSuspended(CodexApprovalPrompt, {
       props: {
         count: 2,
@@ -183,7 +183,8 @@ describe('Codex approval projection', () => {
 
     const prompt = component.get('[role="status"]')
     expect(prompt.text()).toContain('2 项审批等待处理')
-    expect(prompt.classes()).toContain('fixed')
+    expect(prompt.classes()).toContain('codex-approval-prompt')
+    expect(prompt.classes()).not.toContain('fixed')
     expect(component.text()).not.toContain('允许一次')
     await component.get('button').trigger('click')
     expect(component.emitted('open')).toEqual([[]])

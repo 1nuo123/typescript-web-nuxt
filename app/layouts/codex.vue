@@ -1,5 +1,7 @@
 <template>
-  <div class="h-dvh min-h-dvh min-w-0 overflow-hidden bg-canvas text-ink">
+  <div
+    class="codex-surface codex-shell h-dvh min-h-dvh min-w-0 overflow-hidden bg-canvas text-ink"
+  >
     <CodexConnectionBanner
       :status="status"
       :reconnect-attempt="reconnectAttempt"
@@ -7,19 +9,42 @@
       :last-close="lastClose"
     />
 
-    <div v-if="isMobile" class="h-dvh min-h-0 min-w-0 overflow-hidden">
+    <div
+      v-if="isMobile"
+      class="h-dvh min-h-0 min-w-0 overflow-hidden bg-surface"
+    >
       <slot />
       <CodexContextPanel v-if="uiStore.contextPanelOpen" />
     </div>
 
     <div
       v-else
-      class="grid h-dvh min-h-0 min-w-0 overflow-hidden"
-      :class="desktopGridClass"
+      class="codex-desktop grid h-dvh min-h-0 min-w-0 overflow-hidden"
+      :class="{
+        'codex-desktop--focused': uiStore.navigationCollapsed,
+        'codex-desktop--context': uiStore.contextPanelOpen && width >= 1280,
+      }"
     >
-      <CodexProjectRail />
-      <CodexConversationSidebar />
-      <main class="min-h-0 min-w-0 overflow-hidden bg-surface">
+      <CodexProjectRail
+        v-show="!uiStore.navigationCollapsed"
+        id="codex-navigation"
+      >
+        <CodexConversationSidebar />
+      </CodexProjectRail>
+      <main
+        class="codex-main relative min-h-0 min-w-0 overflow-hidden bg-surface"
+      >
+        <button
+          type="button"
+          class="codex-navigation-toggle"
+          :aria-expanded="!uiStore.navigationCollapsed"
+          aria-controls="codex-navigation"
+          :aria-label="uiStore.navigationCollapsed ? '展开导航' : '收起导航'"
+          :title="uiStore.navigationCollapsed ? '展开导航' : '收起导航'"
+          @click="uiStore.toggleNavigation()"
+        >
+          <PanelLeft class="size-4" aria-hidden="true" />
+        </button>
         <slot />
       </main>
       <CodexContextPanel v-if="uiStore.contextPanelOpen" />
@@ -29,7 +54,12 @@
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import { PanelLeft } from '@lucide/vue'
+import { UI_SURFACE_CLASS } from '~/utils/ui-surface'
+
 import { AuthScope, AuthSessionStatus } from '~/types/auth'
+
+provide(UI_SURFACE_CLASS, 'codex-surface')
 
 const authStore = useAuthStore()
 const sessionStore = useCodexSessionStore()
@@ -37,14 +67,9 @@ const realtimeStore = useCodexRealtimeStore()
 const approvalsStore = useCodexApprovalsStore()
 const uiStore = useCodexUiStore()
 const experienceFlags = useCodexExperienceFeatureFlags()
-const { status, reconnectAttempt, lastError, lastClose } = storeToRefs(realtimeStore)
+const { status, reconnectAttempt, lastError, lastClose } =
+  storeToRefs(realtimeStore)
 const { width, isMobile } = useBreakpoints()
-
-const desktopGridClass = computed(() =>
-  uiStore.contextPanelOpen && width.value >= 1280
-    ? 'grid-cols-[minmax(9.5rem,0.65fr)_minmax(13rem,0.9fr)_minmax(0,2.2fr)_minmax(19rem,1fr)]'
-    : 'grid-cols-[minmax(9.5rem,0.65fr)_minmax(13rem,0.9fr)_minmax(0,2.2fr)]',
-)
 
 if (import.meta.client) useCodexRealtime()
 

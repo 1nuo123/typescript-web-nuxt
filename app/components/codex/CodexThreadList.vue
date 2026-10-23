@@ -1,6 +1,6 @@
 <template>
   <div
-    class="overflow-hidden rounded-lg border border-line bg-surface"
+    class="codex-card overflow-hidden rounded-lg border border-line bg-surface"
     aria-label="Codex 会话列表"
   >
     <button

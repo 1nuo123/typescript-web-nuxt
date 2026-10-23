@@ -1,6 +1,6 @@
 <template>
   <form
-    class="min-w-0 max-w-full overflow-hidden rounded-lg border border-line-strong bg-surface shadow-[0_8px_28px_rgb(20_24_31/0.08)] transition focus-within:border-primary"
+    class="codex-composer min-w-0 max-w-full overflow-hidden transition"
     @submit.prevent="submit"
   >
     <label class="sr-only" :for="inputId">发送给 Codex</label>
@@ -11,12 +11,12 @@
       rows="3"
       :disabled="disabled || submitting"
       :placeholder="placeholder"
-      class="block w-full resize-none border-0 bg-transparent px-4 pt-3.5 pb-2 text-[0.9375rem] leading-6 text-ink outline-none placeholder:text-ink-muted focus:ring-0"
+      class="block w-full resize-none border-0 bg-transparent px-5 pt-4 pb-2 text-[0.9375rem] leading-6 text-ink outline-none placeholder:text-ink-muted focus:ring-0"
       @keydown.meta.enter.prevent="submit"
       @keydown.ctrl.enter.prevent="submit"
     />
     <div
-      class="flex min-h-11 items-center justify-between gap-3 border-t border-line px-2.5 py-2"
+      class="flex min-h-12 items-center justify-between gap-3 px-3 pb-3 pt-1"
     >
       <span class="flex items-center gap-2 px-1.5 text-xs text-ink-muted">
         <CornerDownLeft class="size-3.5" aria-hidden="true" />

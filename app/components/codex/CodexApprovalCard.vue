@@ -1,6 +1,6 @@
 <template>
   <article
-    class="grid min-w-0 gap-3 rounded-lg border border-line bg-surface p-4"
+    class="codex-card grid min-w-0 gap-3 rounded-lg border border-line bg-surface p-4"
   >
     <header class="flex min-w-0 items-start justify-between gap-3">
       <div class="min-w-0">
@@ -95,10 +95,16 @@
         {{ approvalStateMessage }}
       </span>
       <BaseButton
-        v-if="approval.state === CodexApprovalState.DeliveryFailed && approval.decision"
-        size="sm" variant="secondary" :disabled="submitting"
+        v-if="
+          approval.state === CodexApprovalState.DeliveryFailed &&
+          approval.decision
+        "
+        size="sm"
+        variant="secondary"
+        :disabled="submitting"
         @click="requestGrant(approval.decision)"
-      >重新核对并交付</BaseButton>
+        >重新核对并交付</BaseButton
+      >
       <BaseButton
         v-if="canDecide && allows(CodexApprovalDecision.Decline)"
         size="sm"
@@ -319,6 +325,7 @@ const approvalStateMessage = computed(() => {
     case CodexApprovalState.Pending:
       return decisionAcknowledged.value ? '审批结果正在提交。' : ''
   }
+  return ''
 })
 
 const approvalStateTone = computed(() =>

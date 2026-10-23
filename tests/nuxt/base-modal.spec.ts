@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import BaseModal from '~/components/base/BaseModal.vue'
+import { UI_SURFACE_CLASS } from '~/utils/ui-surface'
 
 describe('BaseModal', () => {
   afterEach(() => {
@@ -33,6 +34,30 @@ describe('BaseModal', () => {
     await nextTick()
 
     expect(document.body.style.overflow).toBe('')
+  })
+
+  it('inherits an explicit layout surface through Teleport without affecting other dialogs', async () => {
+    const themed = await mountSuspended(BaseModal, {
+      props: { open: true, title: 'Scoped dialog' },
+      global: { provide: { [UI_SURFACE_CLASS as symbol]: 'codex-surface' } },
+    })
+    expect(
+      document.body
+        .querySelector('[role="dialog"]')
+        ?.classList.contains('codex-surface'),
+    ).toBe(true)
+    themed.unmount()
+    await nextTick()
+
+    const unscoped = await mountSuspended(BaseModal, {
+      props: { open: true, title: 'Default dialog' },
+    })
+    expect(
+      document.body
+        .querySelector('[role="dialog"]')
+        ?.classList.contains('codex-surface'),
+    ).toBe(false)
+    unscoped.unmount()
   })
 
   it('emits close from the backdrop', async () => {

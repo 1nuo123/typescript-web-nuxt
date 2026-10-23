@@ -1,6 +1,6 @@
 <template>
   <article
-    class="flex w-full min-w-0 max-w-full gap-3 overflow-hidden px-1 py-2"
+    class="codex-message flex w-full min-w-0 max-w-full gap-3 overflow-hidden px-1 py-3"
     :class="
       item.detail.kind === CodexTimelineItemKind.UserMessage
         ? 'justify-end'
@@ -8,7 +8,12 @@
     "
   >
     <div
-      v-if="item.detail.kind !== CodexTimelineItemKind.UserMessage"
+      v-if="
+        item.detail.kind !== CodexTimelineItemKind.UserMessage &&
+        item.detail.kind !== CodexTimelineItemKind.AgentMessage &&
+        item.detail.kind !== CodexTimelineItemKind.Command &&
+        item.detail.kind !== CodexTimelineItemKind.Plan
+      "
       class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border border-line bg-surface text-ink-muted"
       aria-hidden="true"
     >
@@ -16,6 +21,10 @@
     </div>
     <div class="min-w-0 max-w-full overflow-hidden" :class="contentClass">
       <div
+        v-if="
+          item.detail.kind !== CodexTimelineItemKind.Command &&
+          item.detail.kind !== CodexTimelineItemKind.Plan
+        "
         class="mb-1.5 flex items-center gap-2 text-[0.6875rem] font-medium text-ink-muted"
       >
         <span>{{ itemLabel }}</span>
@@ -50,7 +59,7 @@
           item.detail.kind === CodexTimelineItemKind.UserMessage ||
           item.detail.kind === CodexTimelineItemKind.AgentMessage
         "
-        class="codex-markdown break-words text-sm leading-6 text-ink"
+        class="codex-markdown break-words text-[0.9375rem] leading-7 text-ink"
       >
         <CodexMarkdown
           :copyable="item.detail.kind === CodexTimelineItemKind.AgentMessage"
@@ -85,9 +94,21 @@
         v-else-if="item.detail.kind === CodexTimelineItemKind.Plan"
         :item="planItem"
       />
+      <CodexCommandOutput
+        v-else-if="item.detail.kind === CodexTimelineItemKind.Command"
+        :item="commandItem"
+        show-context-link
+        persist-expansion
+        @open-context="
+          $emit(
+            'open-context',
+            item.header.item_id,
+            CodexTimelineItemKind.Command,
+          )
+        "
+      />
       <button
         v-else-if="
-          item.detail.kind === CodexTimelineItemKind.Command ||
           item.detail.kind === CodexTimelineItemKind.Diff ||
           item.detail.kind === CodexTimelineItemKind.Approval
         "
@@ -118,6 +139,7 @@ import {
   CodexTimelineItemKind,
   CodexTimelineItemStatus,
   type CodexPlanTimelineItem,
+  type CodexCommandTimelineItem,
   type CodexTimelineRenderableItem,
 } from '~/types/codex-item'
 import CodexMarkdown from './CodexMarkdown'
@@ -148,7 +170,7 @@ const failedClientOperationId = computed(() => {
 
 const contentClass = computed(() => {
   if (props.item.detail.kind === CodexTimelineItemKind.UserMessage) {
-    return 'max-w-[88%] rounded-lg bg-surface-muted px-4 py-3 sm:max-w-[78%]'
+    return 'codex-message-user max-w-[88%] rounded-2xl bg-surface-muted px-4 py-3 sm:max-w-[75%]'
   }
   if (
     props.item.detail.kind === CodexTimelineItemKind.Command ||
@@ -159,6 +181,8 @@ const contentClass = computed(() => {
   }
   return 'flex-1 px-1 py-1'
 })
+
+const commandItem = computed(() => props.item as CodexCommandTimelineItem)
 
 const planItem = computed(() => props.item as CodexPlanTimelineItem)
 
@@ -193,9 +217,6 @@ const itemLabel = computed(() => {
 })
 
 const contextSummary = computed(() => {
-  if (props.item.detail.kind === CodexTimelineItemKind.Command) {
-    return props.item.detail.command || '命令输出'
-  }
   if (props.item.detail.kind === CodexTimelineItemKind.Diff) {
     return `${props.item.detail.diff.files.length} 个文件变更`
   }

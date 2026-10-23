@@ -221,7 +221,13 @@ test.describe('Codex execution audit browser flow', () => {
     page,
     goto,
   }, testInfo) => {
+    test.setTimeout(90_000)
     let failNextThreadList = false
+    let processIsRunning = false
+    const currentFixtureThread = () =>
+      processIsRunning
+        ? { ...thread, status: 'active', active_turn_id: 'turn-1' }
+        : thread
     await page.addInitScript(() => {
       class DeterministicWebSocket extends EventTarget {
         static connections: DeterministicWebSocket[] = []
@@ -316,6 +322,7 @@ test.describe('Codex execution audit browser flow', () => {
             'codex:approve',
             'codex:files',
             'codex:terminal',
+            'codex:host_manage',
           ],
           is_admin: false,
         })
@@ -330,9 +337,36 @@ test.describe('Codex execution audit browser flow', () => {
       if (url.pathname === '/codex/realtime-tickets') {
         return fulfill({ ticket: 'e2e-ticket', expires_at: null })
       }
+      if (url.pathname === '/codex/active-host')
+        return fulfill({
+          active_host_id: 'host-1',
+          draining_host_id: null,
+          target_host_id: null,
+          version: 1,
+        })
       if (url.pathname === '/codex/hosts') return fulfill({ items: [host] })
       if (url.pathname === '/codex/hosts/host-1/workspaces') {
         return fulfill({ items: [workspace] })
+      }
+      if (
+        url.pathname ===
+        '/codex/hosts/host-1/workspaces/workspace-1/preferences'
+      ) {
+        return fulfill({
+          workspace_id: 'workspace-1',
+          effective_preferences: {
+            ...workspace.execution_preferences,
+            requested: {
+              model: 'gpt-5.6-sol',
+              reasoning_effort: 'xhigh',
+              permission_mode: 'inherit',
+            },
+            local_revision: 1,
+            applied_state: 'saved',
+            error: null,
+          },
+          adjusted_fields: [],
+        })
       }
       if (url.pathname === '/codex/hosts/host-1/threads') {
         if (request.method() === 'GET') {
@@ -346,12 +380,12 @@ test.describe('Codex execution audit browser flow', () => {
               }),
             })
           }
-          return fulfill({ items: [thread], next_cursor: null })
+          return fulfill({ items: [currentFixtureThread()], next_cursor: null })
         }
       }
       if (url.pathname === '/codex/hosts/host-1/threads/thread-1') {
         return fulfill({
-          thread,
+          thread: currentFixtureThread(),
           turns: [],
           items: [],
           history_status: 'complete',
@@ -425,9 +459,94 @@ test.describe('Codex execution audit browser flow', () => {
     ).toBeVisible()
     await expect(page.getByText('gpt-5.6-sol · xhigh')).toBeVisible()
 
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const draftInput = page.getByLabel('发送给 Codex')
+    await draftInput.fill('折叠导航时保留的草稿')
+    const navigation = page.getByRole('complementary', {
+      name: 'Codex 项目导航',
+    })
+    const navigationWidth = await navigation.evaluate(
+      (element) => element.getBoundingClientRect().width,
+    )
+    expect(navigationWidth).toBe(280)
+    const collapseButton = page.getByRole('button', {
+      name: '收起导航',
+      exact: true,
+    })
+    await collapseButton.focus()
+    await page.keyboard.press('Enter')
+    await expect(navigation).toBeHidden()
+    await expect(draftInput).toHaveValue('折叠导航时保留的草稿')
+    await expect(page.getByRole('button', { name: '展开导航' })).toBeFocused()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('codex-focus-mode.png'),
+    })
+    await page.getByRole('button', { name: '展开导航' }).click()
+    await expect(navigation).toBeVisible()
+    await draftInput.clear()
+
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value
+      }, theme)
+      await expect(page.locator('.codex-main')).toHaveCSS(
+        'background-color',
+        theme === 'dark' ? 'rgb(20, 20, 20)' : 'rgb(255, 255, 255)',
+      )
+      await page
+        .locator('.codex-conversation-header')
+        .getByLabel('会话菜单', { exact: true })
+        .click()
+      await page
+        .locator('.codex-conversation-header')
+        .getByRole('button', { name: '重命名', exact: true })
+        .click()
+      const dialog = page.getByRole('dialog', { name: '重命名会话' })
+      await expect(dialog).toBeVisible()
+      await expect(dialog).toHaveClass(/codex-surface/)
+      await expect(
+        dialog.getByRole('button', { name: '关闭弹窗', exact: true }).last(),
+      ).toBeFocused()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      const closeFocusStyle = await dialog
+        .getByRole('button', { name: '关闭弹窗', exact: true })
+        .last()
+        .evaluate((element) => ({
+          width: getComputedStyle(element).outlineWidth,
+          style: getComputedStyle(element).outlineStyle,
+        }))
+      expect(closeFocusStyle).toEqual({ width: '2px', style: 'solid' })
+      await page.keyboard.press('Tab')
+      await expect(dialog.getByLabel('会话标题')).toBeFocused()
+      await expect(dialog.getByLabel('会话标题')).toHaveCSS(
+        'outline-style',
+        'solid',
+      )
+
+      await page.screenshot({
+        animations: 'disabled',
+        path: testInfo.outputPath(`codex-${theme}-dialog.png`),
+      })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await page
+        .locator('.codex-conversation-header')
+        .getByLabel('会话菜单', { exact: true })
+        .click()
+      await page.screenshot({
+        animations: 'disabled',
+        path: testInfo.outputPath(`codex-${theme}-conversation.png`),
+      })
+    }
+
     for (const viewport of [
       { width: 1440, height: 900 },
+      { width: 1280, height: 900 },
       { width: 1024, height: 900 },
+      { width: 768, height: 900 },
+      { width: 844, height: 390 },
       { width: 430, height: 900 },
       { width: 390, height: 844 },
       { width: 360, height: 800 },
@@ -436,14 +555,41 @@ test.describe('Codex execution audit browser flow', () => {
       await expect(
         page.getByRole('heading', { name: '执行审计会话' }),
       ).toBeVisible()
+      if (viewport.width >= 768) {
+        await expect(
+          page
+            .getByRole('navigation', { name: 'Codex 辅助导航' })
+            .getByRole('link', { name: '设置', exact: true }),
+        ).toBeInViewport()
+        await expect(
+          page.locator('[data-codex-thread-id="thread-1"]'),
+        ).toBeInViewport()
+      }
       const overflow = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
       }))
       expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1)
       await page.screenshot({
+        animations: 'disabled',
         path: testInfo.outputPath(`codex-${viewport.width}.png`),
       })
+      await page
+        .getByRole('button', { name: '会话上下文', exact: true })
+        .click()
+      await expect(
+        page.getByRole('complementary', { name: '会话上下文' }),
+      ).toBeVisible()
+      await page.screenshot({
+        animations: 'disabled',
+        path: testInfo.outputPath(`codex-context-${viewport.width}.png`),
+      })
+      await page
+        .getByRole('button', { name: '关闭上下文', exact: true })
+        .click()
+      await expect(
+        page.getByRole('complementary', { name: '会话上下文' }),
+      ).toBeHidden()
     }
 
     await page.getByLabel('发送给 Codex').fill('写入审计文件')
@@ -482,6 +628,7 @@ test.describe('Codex execution audit browser flow', () => {
     await expect(page).toHaveURL(/\/codex\/approval-center/)
     await expect(page.getByText('1 项待处理')).toBeVisible()
     await page.screenshot({
+      animations: 'disabled',
       path: testInfo.outputPath('approval-1-applied.png'),
     })
 
@@ -566,8 +713,378 @@ test.describe('Codex execution audit browser flow', () => {
       }),
     )
     await expect(page.getByText('1 个文件变更')).toBeVisible()
-    await page.screenshot({ path: testInfo.outputPath('file-diff.png') })
+    for (const item of [
+      textTimelineItem(
+        'design-user',
+        'turn-1',
+        '请检查项目结构，并展示可维护的实现方案。',
+        'user_message',
+      ),
+      textTimelineItem(
+        'design-agent',
+        'turn-1',
+        [
+          '## 实现方案',
+          '保持既有业务边界，将布局、消息和表单收敛到统一的视觉体系。',
+          '',
+          '- **导航**：项目与会话放在同一侧栏。',
+          '- **交互**：保留键盘操作、复制代码和阅读位置。',
+          '',
+          '```typescript',
+          'const message = "A deliberately long line to verify that code wrapping and horizontal scrolling remain usable on narrow mobile screens without widening the conversation"',
+          'console.log(message)',
+          '```',
+          '',
+          '界面已准备就绪，可以继续检查下一项。',
+        ].join('\n'),
+      ),
+    ]) {
+      await page.evaluate(
+        (event) => {
+          const socket = Reflect.get(window, '__codexE2eSocket') as {
+            emit: (payload: string) => void
+          }
+          socket.emit(JSON.stringify(event))
+        },
+        makeEvent(`cursor-${item.header.item_id}`, {
+          kind: 'item.upsert',
+          item,
+        }),
+      )
+    }
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 1000 },
+    ]) {
+      await page.setViewportSize(viewport)
+      const agentMessage = page.locator('[data-codex-item-id="design-agent"]')
+      await expect(agentMessage).toBeVisible()
+      await page
+        .getByRole('button', { name: '开启代码换行', exact: true })
+        .click()
+      await expect(page.locator('.codex-markdown-pre-wrapped')).toBeVisible()
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => {
+          document.documentElement.dataset.theme = value
+        }, theme)
+        expect(
+          await page
+            .locator('.codex-reading-column')
+            .first()
+            .evaluate((element) => element.getBoundingClientRect().width),
+        ).toBeLessThanOrEqual(780)
+        await page.screenshot({
+          animations: 'disabled',
+          path: testInfo.outputPath(
+            `codex-messages-${viewport.width}-${theme}.png`,
+          ),
+        })
+      }
+      await page
+        .getByRole('button', { name: '关闭代码换行', exact: true })
+        .click()
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true)
+    }
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.getByRole('button', { name: '复制代码', exact: true }).click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toContain('console.log(message)')
 
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('file-diff.png'),
+    })
+
+    const emitProcess = async (
+      cursor: string,
+      detail: Record<string, unknown>,
+    ) => {
+      await page.evaluate(
+        (event) => {
+          const socket = Reflect.get(window, '__codexE2eSocket') as {
+            emit: (payload: string) => void
+          }
+          socket.emit(JSON.stringify(event))
+        },
+        makeEvent(cursor, detail),
+      )
+    }
+    const expectMeasuredRows = async () => {
+      await expect
+        .poll(() =>
+          page
+            .locator('.codex-conversation [data-codex-item-id]')
+            .evaluateAll((elements) => {
+              const rows = elements
+                .map((element) => ({
+                  id: element.getAttribute('data-codex-item-id'),
+                  index: Number(element.getAttribute('data-index')),
+                  box: element.getBoundingClientRect(),
+                }))
+                .sort((left, right) => left.index - right.index)
+              return rows.flatMap((row, index) => {
+                const next = rows[index + 1]
+                return next && next.box.top < row.box.bottom - 1
+                  ? [`${row.id} overlaps ${next.id}`]
+                  : []
+              })
+            }),
+        )
+        .toEqual([])
+    }
+    const processCommand = (
+      status: string,
+      output: string,
+      exitCode: number | null,
+      id = 'process-command',
+    ) => ({
+      header: {
+        item_id: id,
+        thread_id: 'thread-1',
+        turn_id: 'turn-1',
+        detail_kind: 'command',
+        schema_version: '1.0',
+        status,
+        created_at: NOW,
+        client_operation_id: null,
+      },
+      detail: {
+        kind: 'command',
+        schema_version: '1.0',
+        command:
+          id === 'process-command'
+            ? 'python -u verify_ui.py'
+            : 'python fail_ui.py',
+        output,
+        exit_code: exitCode,
+      },
+    })
+    processIsRunning = true
+    await emitProcess('process-start', {
+      kind: 'turn.started',
+      turn: {
+        turn_id: 'turn-1',
+        thread_id: 'thread-1',
+        status: 'active',
+        started_at: NOW,
+      },
+    })
+    await emitProcess('process-running', {
+      kind: 'thread.updated',
+      thread: {
+        ...thread,
+        status: 'active',
+        active_turn_id: 'turn-1',
+        turn_runtime: {
+          turn_id: 'turn-1',
+          thread_id: 'thread-1',
+          phase: 'running',
+          last_activity_at: NOW,
+          stalled_reason: null,
+          lease_generation: 1,
+          lease_expires_at: null,
+        },
+      },
+    })
+    await emitProcess('process-empty', {
+      kind: 'item.upsert',
+      item: processCommand('streaming', '', null),
+    })
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    const process = page.locator(
+      '.codex-conversation [data-command-id="process-command"]',
+    )
+    await expect(process.locator('summary')).toContainText('执行中')
+    await expect(
+      page.getByRole('button', { name: '中断', exact: true }),
+    ).toBeVisible()
+    await process.locator('summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(process.locator('details')).toHaveAttribute('open', '')
+    await expect(process.getByLabel('命令输出')).toHaveText('等待输出…')
+    await process.scrollIntoViewIfNeeded()
+    await expect(process.locator('.codex-terminal')).toBeInViewport({
+      ratio: 0.95,
+    })
+    await expectMeasuredRows()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('execution-running-empty.png'),
+    })
+    const partialOutput = 'step 1\n' + 'long-output-'.repeat(45)
+    await emitProcess('process-partial', {
+      kind: 'item.upsert',
+      item: processCommand('streaming', partialOutput, null),
+    })
+    await expect(process.locator('details')).toHaveAttribute('open', '')
+    await expect(process.getByLabel('命令输出')).toHaveText(partialOutput)
+    await emitProcess('process-tail', {
+      kind: 'item.upsert',
+      item: textTimelineItem('process-tail', 'turn-1', '命令输出后续消息'),
+    })
+    const tail = page.locator('[data-codex-item-id="process-tail"]')
+    await expect
+      .poll(async () => {
+        const first = await process.boundingBox()
+        const next = await tail.boundingBox()
+        return Boolean(first && next && next.y >= first.y + first.height - 1)
+      })
+      .toBe(true)
+    await process.scrollIntoViewIfNeeded()
+    await expect(process.locator('.codex-terminal')).toBeInViewport({
+      ratio: 0.95,
+    })
+    await expectMeasuredRows()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('execution-partial-desktop.png'),
+    })
+    await page.setViewportSize({ width: 390, height: 1000 })
+    await expect(async () => {
+      await process.scrollIntoViewIfNeeded()
+      await expect(process.locator('.codex-terminal')).toBeInViewport({
+        ratio: 0.95,
+      })
+    }).toPass({ timeout: 5000 })
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true)
+    await process.scrollIntoViewIfNeeded()
+    await expect(process.locator('.codex-terminal')).toBeInViewport({
+      ratio: 0.95,
+    })
+    await expectMeasuredRows()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('execution-partial-mobile.png'),
+    })
+    await emitProcess('process-complete', {
+      kind: 'item.upsert',
+      item: processCommand('completed', partialOutput + '\nfinished', 0),
+    })
+    await expect(process.locator('details')).toHaveAttribute('open', '')
+    await expect(process.locator('summary')).toContainText('退出码 0')
+    await process.getByRole('button', { name: '复制输出', exact: true }).click()
+    await expect
+      .poll(() =>
+        page.evaluate(async () =>
+          (await navigator.clipboard.readText()).replace(/\r\n/g, '\n'),
+        ),
+      )
+      .toBe(partialOutput + '\nfinished')
+    await process.getByRole('button', { name: '复制命令', exact: true }).click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe('python -u verify_ui.py')
+    await process.locator('summary').click()
+    await emitProcess('process-complete-update', {
+      kind: 'item.upsert',
+      item: processCommand('completed', 'final verified output', 0),
+    })
+    await expect(process.locator('details')).not.toHaveAttribute('open')
+    await emitProcess('process-failure', {
+      kind: 'item.upsert',
+      item: processCommand(
+        'completed',
+        'expected failure',
+        1,
+        'process-failed',
+      ),
+    })
+    const failedProcess = page.locator(
+      '.codex-conversation [data-command-id="process-failed"]',
+    )
+    await expect(failedProcess.locator('summary')).toContainText('执行失败')
+    await expect(failedProcess.locator('summary')).toContainText('退出码 1')
+    await failedProcess.locator('summary').click()
+    await expect(failedProcess.getByLabel('命令输出')).toHaveText(
+      'expected failure',
+    )
+    await failedProcess.scrollIntoViewIfNeeded()
+    await expect(failedProcess.locator('.codex-terminal')).toBeInViewport({
+      ratio: 0.95,
+    })
+    await expectMeasuredRows()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('execution-failed-mobile.png'),
+    })
+    await failedProcess
+      .getByRole('button', { name: '在上下文中查看', exact: true })
+      .click()
+    await expect(page).toHaveURL(/contextItem=process-failed/)
+    const context = page.getByRole('complementary', { name: '会话上下文' })
+    await expect(
+      context.locator('[data-command-id="process-failed"]'),
+    ).toBeVisible()
+    await context.getByLabel('选择命令输出').selectOption('process-command')
+    await expect(
+      context.locator('[data-command-id="process-command"]'),
+    ).toBeVisible()
+    await context.locator('summary').click()
+    await expect(context.getByLabel('命令输出', { exact: true })).toHaveText(
+      'final verified output',
+    )
+    await context
+      .getByRole('button', { name: '关闭上下文', exact: true })
+      .click()
+    await expect(page).not.toHaveURL(/context=/)
+    await expect(failedProcess.locator('summary')).toContainText('执行失败')
+    const planItem = {
+      header: {
+        ...processCommand('streaming', '', null).header,
+        item_id: 'process-plan',
+        detail_kind: 'plan',
+      },
+      detail: {
+        kind: 'plan',
+        schema_version: '1.0',
+        explanation: '只展示已收到的计划步骤',
+        steps: [
+          { step: '运行检查', status: 'completed' },
+          { step: '整理结果', status: 'in_progress' },
+        ],
+      },
+    }
+    await emitProcess('process-plan', { kind: 'item.upsert', item: planItem })
+    await page.getByLabel('会话时间线', { exact: true }).press('End')
+    const plan = page.locator('[data-codex-item-id="process-plan"] details')
+    await expect(plan.locator('summary')).toContainText('1/2 已完成')
+    await plan.locator('summary').click()
+    await emitProcess('process-plan-done', {
+      kind: 'item.upsert',
+      item: {
+        ...planItem,
+        detail: {
+          ...planItem.detail,
+          steps: planItem.detail.steps.map((step) => ({
+            ...step,
+            status: 'completed',
+          })),
+        },
+      },
+    })
+    await expect(plan).not.toHaveAttribute('open')
+    await expect(plan.locator('summary')).toContainText('2/2 已完成')
+    await expectMeasuredRows()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.getByLabel('会话时间线', { exact: true }).press('End')
+    await expect(plan).not.toHaveAttribute('open')
+    await plan.scrollIntoViewIfNeeded()
+    await expectMeasuredRows()
+    await page.screenshot({
+      animations: 'disabled',
+      path: testInfo.outputPath('execution-completed-collapsed.png'),
+    })
+
+    processIsRunning = false
     await page.evaluate(
       (event) => {
         const socket = Reflect.get(window, '__codexE2eSocket') as {
@@ -597,6 +1114,94 @@ test.describe('Codex execution audit browser flow', () => {
       socket.close(1006, 'e2e reconnect')
     })
     await expect(page.getByText(/正在重新连接/)).toBeVisible()
+
+    const surfaces = [
+      {
+        path: '/codex/tasks?hostId=host-1&workspaceId=workspace-1',
+        title: 'E2E Workspace',
+        name: 'welcome',
+      },
+      {
+        path: '/codex/projects?hostId=host-1',
+        title: '项目',
+        name: 'projects',
+      },
+      {
+        path: '/codex/projects/workspace-1?hostId=host-1',
+        title: 'E2E Workspace',
+        name: 'project',
+      },
+      { path: '/codex/approval-center', title: '审批', name: 'approvals' },
+      {
+        path: '/codex/settings?hostId=host-1',
+        title: '电脑',
+        name: 'settings',
+      },
+      {
+        path: '/codex/settings/execution?hostId=host-1&workspaceId=workspace-1',
+        title: '运行设置',
+        name: 'execution',
+      },
+      { path: '/codex/verify-device', title: '验证电脑', name: 'verify' },
+    ]
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport)
+      for (const surface of surfaces) {
+        await goto(surface.path, { waitUntil: 'hydration' })
+        if (surface.name !== 'welcome' || viewport.width > 767) {
+          await expect(
+            page.getByRole('heading', { name: surface.title, exact: true }),
+          ).toBeVisible()
+        } else {
+          await expect(
+            page.getByRole('heading', { name: 'Remote', exact: true }),
+          ).toBeVisible()
+        }
+        for (const theme of ['light', 'dark']) {
+          await page.evaluate((value) => {
+            document.documentElement.dataset.theme = value
+          }, theme)
+          expect(
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= window.innerWidth,
+            ),
+          ).toBe(true)
+          await page.screenshot({
+            animations: 'disabled',
+            path: testInfo.outputPath(
+              `codex-${surface.name}-${viewport.width}-${theme}.png`,
+            ),
+            fullPage: true,
+          })
+        }
+        if (surface.name === 'settings') {
+          const renameComputer = page.getByRole('button', {
+            name: '重命名电脑',
+            exact: true,
+          })
+          await renameComputer.scrollIntoViewIfNeeded()
+          await expect(renameComputer).toBeInViewport()
+          await renameComputer.click()
+          await expect(
+            page.getByRole('dialog', { name: '重命名电脑' }),
+          ).toBeVisible()
+          await page.keyboard.press('Escape')
+          await page.getByRole('button', { name: '浅色', exact: true }).click()
+          await expect(page.locator('html')).toHaveAttribute(
+            'data-theme',
+            'light',
+          )
+          await page.getByRole('button', { name: '深色', exact: true }).click()
+          await expect(page.locator('html')).toHaveAttribute(
+            'data-theme',
+            'dark',
+          )
+        }
+      }
+    }
   })
 
   test('recovers terminal timeline authority without resurrecting buffered items', async ({

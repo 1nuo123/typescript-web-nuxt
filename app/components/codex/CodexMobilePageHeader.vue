@@ -1,6 +1,6 @@
 <template>
   <header
-    class="-mx-4 -mt-4 mb-4 flex min-h-14 items-center gap-3 border-b border-line bg-surface px-3 pt-[env(safe-area-inset-top)]"
+    class="codex-mobile-page-header -mx-4 -mt-4 mb-4 flex min-h-14 items-center gap-3 border-b border-line bg-surface px-3 pt-[env(safe-area-inset-top)]"
   >
     <NuxtLink
       :to="backRoute"
@@ -29,7 +29,12 @@ const sessionStore = useCodexSessionStore()
 const route = useRoute()
 const backRoute = computed(() => {
   const returnTo = route.query.returnTo
-  if (typeof returnTo === 'string' && returnTo.startsWith('/codex/tasks/') && !returnTo.includes('\\')) return returnTo
+  if (
+    typeof returnTo === 'string' &&
+    returnTo.startsWith('/codex/tasks/') &&
+    !returnTo.includes('\\')
+  )
+    return returnTo
   const thread = sessionStore.selectedThread
   if (thread) {
     return buildCodexTaskRoute(thread.upstream_thread_id, {

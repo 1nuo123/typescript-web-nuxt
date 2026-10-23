@@ -228,6 +228,11 @@ const renderTokenSequence = (
         h('section', { class: 'codex-markdown-code-block' }, [
           h('div', { class: 'codex-markdown-code-actions' }, [
             h(
+              'span',
+              { class: 'codex-markdown-code-language' },
+              token.info.trim().split(/\s+/)[0] || 'text',
+            ),
+            h(
               'button',
               {
                 'aria-label': '复制代码',

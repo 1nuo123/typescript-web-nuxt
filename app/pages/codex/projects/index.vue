@@ -1,5 +1,8 @@
 <template>
-  <section class="mx-auto grid w-full min-w-0 max-w-5xl grid-cols-1 gap-5">
+  <section
+    class="codex-page mx-auto grid w-full min-w-0 max-w-5xl grid-cols-1 gap-5"
+  >
+    <CodexMobilePageHeader title="项目" />
     <header class="border-b border-line pb-5">
       <h1 class="m-0 text-2xl font-bold">项目</h1>
     </header>

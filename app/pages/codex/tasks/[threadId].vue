@@ -1,6 +1,6 @@
 <template>
   <section
-    class="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface"
+    class="codex-conversation grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface"
   >
     <div
       v-if="pageState !== CodexConversationPageState.Restoring"
@@ -132,7 +132,7 @@
 
     <footer
       v-if="pageState !== CodexConversationPageState.Restoring"
-      class="min-w-0 border-t border-line bg-surface px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-3"
+      class="codex-composer-dock min-w-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-5"
     >
       <p
         v-if="sessionStore.selectedPendingTurn"

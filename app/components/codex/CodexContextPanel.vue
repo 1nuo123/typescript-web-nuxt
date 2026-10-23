@@ -1,6 +1,6 @@
 <template>
   <aside
-    class="fixed inset-0 z-50 grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-surface xl:static xl:z-auto xl:border-l xl:border-line"
+    class="codex-context fixed inset-0 z-50 grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] bg-surface xl:static xl:z-auto xl:border-l xl:border-line"
     aria-label="会话上下文"
   >
     <header class="flex h-14 items-center gap-2 border-b border-line px-3">
@@ -62,7 +62,8 @@
               :key="item.header.item_id"
               :value="item.header.item_id"
             >
-              第 {{ index + 1 }} 次变更 · {{ item.detail.diff.files.length }} 个文件
+              第 {{ index + 1 }} 次变更 ·
+              {{ item.detail.diff.files.length }} 个文件
             </option>
           </select>
           <section

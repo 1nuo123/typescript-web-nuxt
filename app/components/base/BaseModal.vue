@@ -9,6 +9,7 @@
       <div
         v-if="open"
         class="base-modal fixed inset-0 z-60 grid place-items-center p-4"
+        :class="surfaceClass"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="title ? titleId : undefined"
@@ -75,6 +76,9 @@
 
 <script setup lang="ts">
 import { X } from '@lucide/vue'
+import { UI_SURFACE_CLASS } from '~/utils/ui-surface'
+
+const surfaceClass = inject(UI_SURFACE_CLASS, '')
 
 type ModalSize = 'sm' | 'md' | 'lg'
 

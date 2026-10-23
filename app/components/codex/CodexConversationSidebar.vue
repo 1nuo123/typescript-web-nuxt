@@ -1,10 +1,10 @@
 <template>
   <aside
-    class="flex min-h-0 min-w-0 flex-col border-r border-line bg-surface"
+    class="codex-conversations flex min-h-0 min-w-0 flex-1 flex-col"
     aria-label="项目会话列表"
   >
-    <header class="grid gap-2 border-b border-line p-3">
-      <div class="flex min-w-0 items-center gap-2">
+    <header class="grid shrink-0 gap-2 px-3 pt-2 pb-2">
+      <div class="codex-conversation-heading flex min-w-0 items-center gap-2">
         <strong class="min-w-0 flex-1 truncate text-sm">
           {{ sessionStore.selectedWorkspace?.display_name || '选择项目' }}
         </strong>
@@ -52,7 +52,7 @@
         </button>
       </form>
       <div
-        class="grid grid-cols-2 rounded-md border border-line p-0.5"
+        class="codex-segmented grid grid-cols-2 rounded-lg p-0.5"
         role="tablist"
         aria-label="会话范围"
       >
@@ -88,7 +88,12 @@
     </header>
 
     <div ref="threadListContainer" class="min-h-0 flex-1 overflow-y-auto p-2">
-      <AppAlert v-if="actionError" variant="danger" title="操作未完成" :description="actionError" />
+      <AppAlert
+        v-if="actionError"
+        variant="danger"
+        title="操作未完成"
+        :description="actionError"
+      />
       <AppSkeleton v-if="sessionStore.loading" class="h-36" />
       <p
         v-else-if="sessionStore.threads.length === 0"
@@ -225,9 +230,14 @@ const runThreadAction = async (event: Event, action: () => Promise<void>) => {
   actionError.value = ''
   const menu = (event.target as HTMLElement).closest('details')
   if (menu) menu.open = false
-  try { await action() } catch (error) {
-    actionError.value = error instanceof Error ? error.message : '请重新核对操作状态。'
-  } finally { actionBusy.value = false }
+  try {
+    await action()
+  } catch (error) {
+    actionError.value =
+      error instanceof Error ? error.message : '请重新核对操作状态。'
+  } finally {
+    actionBusy.value = false
+  }
 }
 const uiStore = useCodexUiStore()
 const searchTerm = ref(sessionStore.threadSearchTerm)

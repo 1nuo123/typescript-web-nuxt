@@ -1,6 +1,6 @@
 <template>
   <header
-    class="flex min-w-0 items-center gap-3 border-b border-line bg-surface px-3 py-2.5 sm:px-4"
+    class="codex-conversation-header flex min-w-0 items-center gap-3 border-b border-line bg-surface px-3 py-2.5 sm:px-4"
   >
     <NuxtLink
       :to="tasksRoute"
