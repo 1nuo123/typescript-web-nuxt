@@ -86,6 +86,7 @@ export interface CodexThreadCreateRequest {
 export interface CodexThreadAuthoritySnapshot {
   source_epoch?: string | null
   source_seq?: number
+  covered_item_ids?: string[]
   thread: CodexThread
   turns: CodexTurn[]
   items: CodexTimelineItem[]

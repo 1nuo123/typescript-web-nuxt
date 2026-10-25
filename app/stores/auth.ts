@@ -272,7 +272,7 @@ export const useAuthStore = defineStore('auth', {
         return
       }
 
-      if (error.statusCode >= 500) {
+      if (error.statusCode >= 500 || !error.statusCode) {
         // Transient API failures do not invalidate an otherwise valid session.
         // Preserve it so protected realtime views can recover after reconnect.
         this.status =

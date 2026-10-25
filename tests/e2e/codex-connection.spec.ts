@@ -40,6 +40,8 @@ test('browser connection requires application ready and identifies its own offli
 }) => {
   test.skip(process.env.NUXT_TEST_CODEX_FEATURE_ENABLED !== 'true')
   const sockets: WebSocketRoute[] = []
+  let ticketFailures = 0
+  let refreshFailures = 0
   await page.routeWebSocket('**/codex/events*', (socket) => {
     sockets.push(socket)
   })
@@ -49,6 +51,15 @@ test('browser connection requires application ready and identifies its own offli
       'access-control-allow-origin': 'http://127.0.0.1:3320',
       'access-control-allow-credentials': 'true',
       'content-type': 'application/json',
+    }
+    if (path === '/codex/realtime-tickets' && ticketFailures-- > 0) {
+      await route.fulfill({status: 401, headers,
+        body: JSON.stringify({header: {code: 'auth.token_expired', message: 'expired'}})})
+      return
+    }
+    if (path === '/auth/browser/refresh' && refreshFailures-- > 0) {
+      await route.fulfill({status: 502, headers, body: 'temporary gateway failure'})
+      return
     }
     let data: unknown
     if (path === '/auth/browser/refresh')
@@ -110,4 +121,13 @@ test('browser connection requires application ready and identifies its own offli
   sockets[1]!.send(controlEvent('connection.ready'))
   await expect(page.getByText(/浏览器网络已断开/)).toHaveCount(0)
   await expect(page.getByText('正在连接实时服务…')).toHaveCount(0)
+  // A failed refresh is a transport fault; the task route and session survive.
+  ticketFailures = 1
+  refreshFailures = 1
+  await sockets[1]!.close({code: 1012, reason: 'refresh-recovery-e2e'})
+  await expect.poll(() => sockets.length, {timeout: 20_000}).toBe(3)
+  expect(new URL(page.url()).pathname).toBe('/codex/tasks')
+  sockets[2]!.send(controlEvent('connection.ready'))
+  await expect(page.getByText(/登录状态已失效/)).toHaveCount(0)
+
 })

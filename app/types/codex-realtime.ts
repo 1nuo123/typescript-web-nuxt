@@ -87,6 +87,7 @@ export interface CodexWorkspaceSnapshotDetail extends CodexRealtimeDetailBase {
 export interface CodexThreadSnapshotDetail extends CodexRealtimeDetailBase {
   source_epoch?: string | null
   source_seq?: number
+  covered_item_ids?: string[]
   kind: CodexRealtimeEventType.ThreadSnapshot
   thread: CodexThread
   turns: CodexTurn[]

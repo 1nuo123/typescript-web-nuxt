@@ -17,7 +17,7 @@ import { normalizeApiError } from '~/utils/errors'
 
 const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000]
 const RECONNECT_JITTER_RATIO = 0.2
-const DEFAULT_IDLE_TIMEOUT_MS = 90_000
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000
 // One bounded attempt covers ticket, transport and application readiness.
 const CONNECTION_ATTEMPT_TIMEOUT_MS = 30_000
 const NORMAL_EVENT_FRAME_WINDOW_MS = 40
@@ -160,7 +160,10 @@ export const useCodexRealtime = () => {
   let queuedRealtimeCheckpoint: CodexRealtimeCheckpoint | null = null
   let manuallyClosed = false
   let protocolCompatible = true
-  let authRecoveryInFlight: Promise<boolean> | null = null
+  let authRecoveryInFlight: Promise<'success' | 'retry' | 'terminal'> | null =
+    null
+  let recoveryController: AbortController | null = null
+  let transportRecoveryStartedAt: number | null = null
   let connectInFlight: Promise<void> | null = null
   let reconnectAfterAttemptGeneration: number | null = null
   let controllerGeneration = 0
@@ -200,6 +203,9 @@ export const useCodexRealtime = () => {
    * suppress the replacement connection.
    */
   const invalidateConnectionAttempt = (): WebSocket | null => {
+    recoveryController?.abort()
+    recoveryController = null
+    realtimeStore.historyStatus = 'idle'
     controllerGeneration += 1
     connectInFlight = null
     reconnectAfterAttemptGeneration = null
@@ -226,14 +232,44 @@ export const useCodexRealtime = () => {
   const refreshAuthority = async (generation: number): Promise<void> => {
     if (!isCurrent(generation) || recoveryGeneration === generation) return
     recoveryGeneration = generation
+    const authorityStartedAt = performance.now()
+    recoveryController?.abort()
+    const controller = new AbortController()
+    recoveryController = controller
     realtimeStore.beginResync()
     try {
-      await sessionStore.refreshAuthority()
-      if (!isCurrent(generation)) return
+      await Promise.all([
+        sessionStore.refreshAuthority(controller.signal),
+        approvalsStore.load(),
+      ])
+      if (!isCurrent(generation) || controller.signal.aborted) return
       recoveryAttempt = 0
       realtimeStore.finishResync()
+      performanceDiagnostics.record({
+        metric: ClientPerformanceMetric.AuthorityRecoveryMilliseconds,
+        observation: ClientPerformanceObservation.Observed,
+        value: performance.now() - authorityStartedAt,
+      })
+      const historyStartedAt = performance.now()
+      realtimeStore.historyStatus = 'loading'
+      void sessionStore.loadThreadSnapshot(true, controller.signal).then(
+        () => {
+          if (isCurrent(generation) && !controller.signal.aborted) {
+            realtimeStore.historyStatus = 'ready'
+            performanceDiagnostics.record({
+              metric: ClientPerformanceMetric.HistoryLoadMilliseconds,
+              observation: ClientPerformanceObservation.Observed,
+              value: performance.now() - historyStartedAt,
+            })
+          }
+        },
+        () => {
+          if (isCurrent(generation) && !controller.signal.aborted)
+            realtimeStore.historyStatus = 'failed'
+        },
+      )
     } catch {
-      if (isCurrent(generation)) {
+      if (isCurrent(generation) && !controller.signal.aborted) {
         realtimeStore.lastError = '结果同步暂时失败，正在重试。'
         recoveryTimer = setTimeout(() => {
           recoveryTimer = null
@@ -241,7 +277,7 @@ export const useCodexRealtime = () => {
         }, calculateCodexReconnectDelay(recoveryAttempt++))
       }
     } finally {
-      if (recoveryGeneration === generation) recoveryGeneration = null
+      if (recoveryController === controller) recoveryGeneration = null
     }
   }
 
@@ -327,11 +363,33 @@ export const useCodexRealtime = () => {
     { flush: 'sync' },
   )
 
-  const recoverAuthentication = async (): Promise<boolean> => {
+  watch(
+    () => [sessionStore.selectedHostId, sessionStore.selectedThreadId],
+    () => {
+      recoveryController?.abort()
+      recoveryGeneration = null
+      if (recoveryTimer) clearTimeout(recoveryTimer)
+      recoveryTimer = null
+      realtimeStore.historyStatus = 'idle'
+      if (realtimeStore.channelReady)
+        void refreshAuthority(controllerGeneration)
+    },
+  )
+
+  const recoverAuthentication = async (): Promise<
+    'success' | 'retry' | 'terminal'
+  > => {
     if (!authRecoveryInFlight) {
       authRecoveryInFlight = authStore
         .refresh()
-        .catch(() => false)
+        .then((refreshed): 'success' | 'retry' =>
+          refreshed ? 'success' : 'retry',
+        )
+        .catch((error): 'retry' | 'terminal' =>
+          isRetriableRealtimeError(error) || authStore.accessToken
+            ? 'retry'
+            : 'terminal',
+        )
         .finally(() => {
           authRecoveryInFlight = null
         })
@@ -349,6 +407,7 @@ export const useCodexRealtime = () => {
       observation,
       value: 1,
     })
+    transportRecoveryStartedAt ??= performance.now()
     const delay = calculateCodexReconnectDelay(realtimeStore.reconnectAttempt)
     realtimeStore.reconnectAttempt += 1
     realtimeStore.markConnecting(true)
@@ -426,6 +485,14 @@ export const useCodexRealtime = () => {
     let recoveryRequired = false
     for (const event of events) {
       if (event.detail.kind === CodexRealtimeEventType.ConnectionReady) {
+        if (transportRecoveryStartedAt !== null) {
+          performanceDiagnostics.record({
+            metric: ClientPerformanceMetric.ConnectionRecoveryMilliseconds,
+            observation: ClientPerformanceObservation.Observed,
+            value: performance.now() - transportRecoveryStartedAt,
+          })
+          transportRecoveryStartedAt = null
+        }
         if (attemptTimer) clearTimeout(attemptTimer)
         attemptTimer = null
         // A ready channel does not prove the current task/approval projection is fresh.
@@ -541,7 +608,14 @@ export const useCodexRealtime = () => {
       socket = null
       const normalized = normalizeApiError(error)
       if (normalized.statusCode === 401) {
-        if (await recoverAuthentication()) {
+        const recovery = await recoverAuthentication()
+        if (!isCurrent(generation)) return
+        if (recovery === 'retry') {
+          realtimeStore.markError('认证服务暂不可用，正在恢复连接。')
+          scheduleReconnect(generation, ClientPerformanceObservation.RetryTimer)
+          return
+        }
+        if (recovery === 'success') {
           if (isCurrent(generation))
             reconnectAfterAttemptGeneration = generation
           return

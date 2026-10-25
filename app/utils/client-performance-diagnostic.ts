@@ -85,6 +85,21 @@ const clientPerformanceMetricDefinitions: Readonly<
     maximumValue: 1,
     observations: [ClientPerformanceObservation.Duplicate],
   },
+  [ClientPerformanceMetric.ConnectionRecoveryMilliseconds]: {
+    unit: ClientPerformanceUnit.Milliseconds,
+    maximumValue: 300_000,
+    observations: [ClientPerformanceObservation.Observed],
+  },
+  [ClientPerformanceMetric.AuthorityRecoveryMilliseconds]: {
+    unit: ClientPerformanceUnit.Milliseconds,
+    maximumValue: 300_000,
+    observations: [ClientPerformanceObservation.Observed],
+  },
+  [ClientPerformanceMetric.HistoryLoadMilliseconds]: {
+    unit: ClientPerformanceUnit.Milliseconds,
+    maximumValue: 300_000,
+    observations: [ClientPerformanceObservation.Observed],
+  },
   [ClientPerformanceMetric.ReconnectAttempt]: {
     unit: ClientPerformanceUnit.Count,
     maximumValue: 1,

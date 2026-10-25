@@ -69,10 +69,14 @@ export const createCodexThreadsClient = () => {
       threadId: string,
       historyLimit = CODEX_DEFAULT_HISTORY_LIMIT,
       includeHistory = true,
+      signal?: AbortSignal,
     ) =>
       client.get<CodexThreadAuthoritySnapshot>(
         buildCodexThreadPath(hostId, threadId),
         {
+          timeout: 35_000,
+          retry: 0,
+          signal,
           query: {
             include_history: includeHistory,
             history_limit: historyLimit,
@@ -88,6 +92,8 @@ export const createCodexThreadsClient = () => {
       client.get<CodexThreadHistoryPage>(
         buildCodexThreadHistoryPath(hostId, threadId),
         {
+          timeout: 35_000,
+          retry: 0,
           query: {
             before_cursor: beforeCursor,
             limit: historyLimit,
@@ -101,7 +107,7 @@ export const createCodexThreadsClient = () => {
     ) =>
       client.get<CodexThreadHistoryItemReload>(
         buildCodexThreadHistoryItemsPath(hostId, threadId),
-        { query: { item_id: [...itemIds] } },
+        { timeout: 35_000, retry: 0, query: { item_id: [...itemIds] } },
       ),
     create: (
       hostId: string,
@@ -113,7 +119,12 @@ export const createCodexThreadsClient = () => {
         body,
         commandOptions(idempotencyKey),
       ),
-    resume: (hostId: string, threadId: string, execution: CodexExecutionOptions, idempotencyKey?: string) =>
+    resume: (
+      hostId: string,
+      threadId: string,
+      execution: CodexExecutionOptions,
+      idempotencyKey?: string,
+    ) =>
       client.post<CodexOperationAccepted>(
         `${buildCodexThreadPath(hostId, threadId)}/resume`,
         execution,

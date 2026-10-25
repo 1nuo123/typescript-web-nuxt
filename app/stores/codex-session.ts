@@ -74,6 +74,7 @@ interface FailedCodexTurnSubmission {
 interface CodexInFlightLoad {
   key: string
   promise: Promise<void>
+  signal?: AbortSignal
 }
 
 let hostsLoadInFlight: Promise<void> | null = null
@@ -915,14 +916,22 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
     },
 
-    async loadThreadSnapshot(): Promise<void> {
+    async loadThreadSnapshot(
+      includeHistory = true,
+      signal?: AbortSignal,
+    ): Promise<void> {
       if (!this.selectedHostId || !this.selectedThreadId) return
       const hostId = this.selectedHostId
       const threadId = this.selectedThreadId
       const generation = sessionLoadGeneration
       const requestKey = buildSnapshotRecoveryKey(generation, hostId, threadId)
-      if (snapshotLoadInFlight?.key === requestKey) {
+      const flightKey = `${requestKey}:${includeHistory}`
+      if (snapshotLoadInFlight?.key === flightKey) {
         return snapshotLoadInFlight.promise
+      }
+      if (snapshotLoadInFlight) {
+        await snapshotLoadInFlight.promise.catch(() => undefined)
+        if (signal?.aborted || generation !== sessionLoadGeneration) return
       }
       const recoveryGeneration = this.snapshotRecoveryGeneration + 1
       this.snapshotRecoveryGeneration = recoveryGeneration
@@ -942,8 +951,19 @@ export const useCodexSessionStore = defineStore('codex-session', {
           const snapshot = await createCodexThreadsClient().read(
             hostId,
             threadId,
+            undefined,
+            includeHistory,
+            signal,
           )
+          if (signal?.aborted)
+            throw new DOMException('Recovery cancelled', 'AbortError')
           if (!isCurrentRecovery()) return
+          if (
+            !includeHistory &&
+            snapshot.history_status === 'not_available_yet'
+          ) {
+            throw new Error('当前任务实时状态暂不可用。')
+          }
           const snapshotEvent = validateCodexRealtimeEvent({
             header: {
               kind: 'codex_realtime_event',
@@ -1004,7 +1024,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
           }
         }
       })()
-      snapshotLoadInFlight = { key: requestKey, promise: request }
+      snapshotLoadInFlight = { key: flightKey, promise: request }
       try {
         await request
       } finally {
@@ -1262,7 +1282,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
      * 将当前选择恢复为服务端权威视图；同一选择的并发请求必须复用一次只读同步，
      * 防止 stalled 提示和连接恢复同时读取时交错覆盖快照或扩大 Agent 读取负载。
      */
-    async refreshAuthority(): Promise<void> {
+    async refreshAuthority(signal?: AbortSignal): Promise<void> {
       const generation = sessionLoadGeneration
       const hostId = this.selectedHostId
       const workspaceId = this.selectedWorkspaceId
@@ -1273,10 +1293,14 @@ export const useCodexSessionStore = defineStore('codex-session', {
         workspaceId ?? '',
         threadId ?? '',
       ].join(':')
-      if (authorityRefreshInFlight?.key === requestKey)
+      if (
+        authorityRefreshInFlight?.key === requestKey &&
+        !authorityRefreshInFlight.signal?.aborted
+      )
         return authorityRefreshInFlight.promise
 
       const isCurrentSelection = (): boolean =>
+        !signal?.aborted &&
         generation === sessionLoadGeneration &&
         this.selectedHostId === hostId &&
         this.selectedWorkspaceId === workspaceId &&
@@ -1290,25 +1314,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
           if (!isCurrentSelection()) return
         }
         if (!threadId) return
-        let lastError: unknown
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          if (!isCurrentSelection()) return
-          try {
-            await this.loadThreadSnapshot()
-            if (!isCurrentSelection()) return
-            return
-          } catch (error) {
-            lastError = error
-            if (attempt < 2) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 250 * (attempt + 1)),
-              )
-            }
-          }
-        }
-        throw lastError
+        await this.loadThreadSnapshot(false, signal)
       })()
-      authorityRefreshInFlight = { key: requestKey, promise: request }
+      authorityRefreshInFlight = { key: requestKey, promise: request, signal }
       try {
         await request
       } finally {

@@ -3,6 +3,7 @@
     class="codex-surface codex-shell h-dvh min-h-dvh min-w-0 overflow-hidden bg-canvas text-ink"
   >
     <CodexConnectionBanner
+      :history-status="realtimeStore.historyStatus"
       :status="status"
       :reconnect-attempt="reconnectAttempt"
       :error="lastError"

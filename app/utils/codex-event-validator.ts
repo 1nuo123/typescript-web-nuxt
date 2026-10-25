@@ -120,6 +120,7 @@ const detailKeys = (eventType: CodexRealtimeEventType): ReadonlySet<string> => {
         'history_before_cursor',
         'history_has_more',
         'history_revision',
+        'covered_item_ids',
         'source_epoch',
         'source_seq',
       ])
@@ -332,8 +333,13 @@ export const validateCodexRealtimeEvent = (
       `Codex实时事件类型不受支持：${eventType}。`,
     )
   }
-  if (header.source_epoch != null && typeof header.source_epoch !== 'string') throw new CodexRealtimeContractError('事件来源代次无效。')
-  if (header.source_seq != null && (!Number.isSafeInteger(header.source_seq) || Number(header.source_seq) < 0)) throw new CodexRealtimeContractError('事件来源序号无效。')
+  if (header.source_epoch != null && typeof header.source_epoch !== 'string')
+    throw new CodexRealtimeContractError('事件来源代次无效。')
+  if (
+    header.source_seq != null &&
+    (!Number.isSafeInteger(header.source_seq) || Number(header.source_seq) < 0)
+  )
+    throw new CodexRealtimeContractError('事件来源序号无效。')
   requireString(header, 'stream_epoch')
   requireString(header, 'event_id')
   requireTimestamp(header, 'occurred_at')

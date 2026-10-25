@@ -20,6 +20,7 @@ interface CodexRealtimeStoreState {
   lastError: string | null
   lastMessageAt: number | null
   connectedAt: number | null
+  historyStatus: 'idle' | 'loading' | 'ready' | 'failed'
   channelReady: boolean
   lastClose: {
     code: number
@@ -51,6 +52,7 @@ export const useCodexRealtimeStore = defineStore('codex-realtime', {
     lastError: null,
     lastMessageAt: null,
     connectedAt: null,
+    historyStatus: 'idle',
     channelReady: false,
     lastClose: null,
   }),

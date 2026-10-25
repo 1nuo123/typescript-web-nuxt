@@ -1,6 +1,9 @@
 <template>
   <div
-    v-if="status !== CodexRealtimeConnectionStatus.Connected"
+    v-if="
+      status !== CodexRealtimeConnectionStatus.Connected ||
+      historyStatus === 'failed'
+    "
     class="fixed top-3 left-1/2 z-50 w-[min(92vw,42rem)] -translate-x-1/2 rounded-md border border-warning/25 bg-warning-soft px-4 py-2.5 text-center text-sm text-warning shadow-pop"
     role="status"
   >
@@ -12,6 +15,7 @@
 import { CodexRealtimeConnectionStatus } from '~/types/codex-realtime'
 
 const props = defineProps<{
+  historyStatus?: 'idle' | 'loading' | 'ready' | 'failed'
   status: CodexRealtimeConnectionStatus
   reconnectAttempt?: number
   error?: string | null
@@ -25,6 +29,11 @@ const props = defineProps<{
 }>()
 
 const message = computed(() => {
+  if (
+    props.status === CodexRealtimeConnectionStatus.Connected &&
+    props.historyStatus === 'failed'
+  )
+    return '连接已恢复，历史加载失败；可重新打开任务重试。'
   if (props.error) return props.error
   if (props.status === CodexRealtimeConnectionStatus.Offline) {
     return '浏览器网络已断开；联网后自动恢复实时服务。电脑执行状态以主机状态为准。'
@@ -39,7 +48,7 @@ const message = computed(() => {
       : `正在重新连接实时服务（第 ${props.reconnectAttempt ?? 1} 次）…`
   }
   if (props.status === CodexRealtimeConnectionStatus.Resyncing) {
-    return '正在同步权威状态，暂时冻结写入。'
+    return '连接已恢复，正在同步任务和待审批状态。'
   }
   if (props.status === CodexRealtimeConnectionStatus.AuthBlocked) {
     return '登录状态已失效，请重新登录。'
