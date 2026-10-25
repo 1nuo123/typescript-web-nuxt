@@ -10,6 +10,7 @@ interface ActiveHostState {
   active_host_id: string | null
   draining_host_id: string | null
   target_host_id: string | null
+  drain_until: string | null
   version: number
 }
 
@@ -34,13 +35,19 @@ export const createCodexHostsClient = () => {
               { host_id: hostId, expected_version: current.version },
               { signal },
             )
-      const deadline = Date.now() + 60_000
+      // 保留原来的请求恢复预算，但从服务端收尾期限之后计时。
+      // 许可窗口与页面等待不能同在 60 秒结束，否则最后一次状态推进会被页面抢先取消。
+      const deadline =
+        Math.max(
+          Date.now(),
+          state.drain_until === null ? 0 : Date.parse(state.drain_until),
+        ) + 60_000
       while (state.active_host_id !== hostId) {
         if (state.target_host_id !== hostId)
           throw new Error('另一个窗口已切换电脑，请刷新。')
         if (Date.now() >= deadline)
           throw new Error(
-            '仍在等待旧电脑停止 Remote 执行，请稍后核对连接状态。',
+            '电脑切换结果暂时无法确认，请恢复连接后重试；服务端会继续处理收尾。',
           )
         await new Promise<void>((resolve, reject) => {
           const abort = () => {
