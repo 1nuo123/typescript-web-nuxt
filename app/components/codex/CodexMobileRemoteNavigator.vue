@@ -61,6 +61,7 @@
             class="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-ink-muted"
           />
         </label>
+
         <NuxtLink
           :to="CODEX_SETTINGS_ROUTE"
           class="grid size-10 place-items-center rounded-md border border-line text-ink-muted no-underline"
@@ -70,6 +71,12 @@
           <Settings2 class="size-4" />
         </NuxtLink>
       </div>
+      <AppAlert
+        v-if="hostSelectionError"
+        variant="danger"
+        title="电脑切换失败"
+        :description="hostSelectionError"
+      />
       <form class="relative" @submit.prevent="submitSearch">
         <Search
           class="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-ink-muted"
@@ -292,10 +299,19 @@ const threadRoute = (thread: CodexThread): string =>
     ...taskRouteFilters(),
   })
 
+const hostSelectionError = ref('')
+
 const selectHost = async (event: Event): Promise<void> => {
+  hostSelectionError.value = ''
   const hostId = (event.target as HTMLSelectElement).value
   if (!hostId) return
-  await sessionStore.selectHost(hostId)
+  try {
+    await sessionStore.selectHost(hostId)
+  } catch {
+    hostSelectionError.value =
+      sessionStore.selectionError || '电脑切换失败，请重试。'
+    return
+  }
   await sessionStore.loadThreads(null)
   await navigateTo(
     buildCodexTasksRoute({

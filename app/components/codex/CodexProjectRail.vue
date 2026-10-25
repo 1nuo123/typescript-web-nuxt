@@ -52,6 +52,13 @@
           class="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-ink-muted"
         />
       </label>
+
+      <AppAlert
+        v-if="hostSelectionError"
+        variant="danger"
+        title="电脑切换失败"
+        :description="hostSelectionError"
+      />
       <button
         type="button"
         class="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-line bg-surface text-xs font-semibold hover:bg-surface-muted disabled:opacity-50"
@@ -189,10 +196,19 @@ const canCreateConversation = computed(
     authStore.canScope(AuthScope.CodexTerminal),
 )
 
+const hostSelectionError = ref('')
+
 const selectHost = async (event: Event): Promise<void> => {
+  hostSelectionError.value = ''
   const hostId = (event.target as HTMLSelectElement).value
   if (!hostId) return
-  await sessionStore.selectHost(hostId)
+  try {
+    await sessionStore.selectHost(hostId)
+  } catch {
+    hostSelectionError.value =
+      sessionStore.selectionError || '电脑切换失败，请重试。'
+    return
+  }
   await navigateTo(
     buildCodexTasksRoute({
       hostId,

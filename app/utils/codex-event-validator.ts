@@ -107,7 +107,13 @@ const detailKeys = (eventType: CodexRealtimeEventType): ReadonlySet<string> => {
     case CodexRealtimeEventType.HostSnapshot:
       return new Set([...shared, 'hosts'])
     case CodexRealtimeEventType.HostStatusChanged:
-      return new Set([...shared, 'host_id', 'status', 'last_seen_at'])
+      return new Set([
+        ...shared,
+        'host_id',
+        'status',
+        'connected',
+        'last_seen_at',
+      ])
     case CodexRealtimeEventType.WorkspaceSnapshot:
       return new Set([...shared, 'workspaces'])
     case CodexRealtimeEventType.ThreadSnapshot:
@@ -230,6 +236,11 @@ const validateDetail = (
     case CodexRealtimeEventType.HostStatusChanged:
       requireString(detail, 'host_id')
       requireString(detail, 'status')
+      if (typeof detail.connected !== 'boolean') {
+        throw new CodexRealtimeContractError(
+          'host.status_changed缺少connected。',
+        )
+      }
       if (
         !Object.values(CodexHostStatus).includes(
           detail.status as CodexHostStatus,

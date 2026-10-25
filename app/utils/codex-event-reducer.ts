@@ -892,6 +892,7 @@ export const reduceCodexRealtimeEvent = (
           [host.host_id]: {
             ...host,
             status: detail.status,
+            connected: detail.connected,
             last_seen_at: detail.last_seen_at ?? host.last_seen_at,
           },
         },

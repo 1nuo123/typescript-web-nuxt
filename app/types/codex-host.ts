@@ -93,7 +93,11 @@ export const CODEX_SANDBOX_RESTRICTION_ORDER: readonly CodexSandboxMode[] = [
 ] as const
 
 export const CODEX_APPROVAL_RESTRICTION_ORDER: readonly CodexApprovalPolicy[] =
-  [CodexApprovalPolicy.Untrusted, CodexApprovalPolicy.OnRequest, CodexApprovalPolicy.Never] as const
+  [
+    CodexApprovalPolicy.Untrusted,
+    CodexApprovalPolicy.OnRequest,
+    CodexApprovalPolicy.Never,
+  ] as const
 
 export interface CodexHostCompatibilityDetail {
   state: CodexHostCompatibilityState
@@ -126,6 +130,7 @@ export interface CodexHost {
   agent_protocol_version: string | null
   app_server_schema_digest: string | null
   status: CodexHostStatus
+  connected: boolean
   capabilities: CodexHostCapabilities
   compatibility: CodexHostCompatibilityDetail
   update: CodexHostUpdateDetail

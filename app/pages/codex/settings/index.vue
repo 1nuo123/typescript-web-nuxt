@@ -9,7 +9,10 @@
       <div>
         <h1 class="m-0 text-xl font-semibold">电脑</h1>
         <p class="mt-1 mb-0 text-sm text-ink-muted">
-          {{ activeHostCount }} 台在线，{{ devicesStore.hosts.length }} 台已登记
+          {{ activeHostCount }} 台已连接，{{
+            devicesStore.hosts.length
+          }}
+          台已登记
         </p>
       </div>
       <BaseButton :loading="connecting" @click="connectComputer">
@@ -27,7 +30,7 @@
     <AppAlert
       v-if="connectError"
       variant="warning"
-      title="一键连接未完成"
+      title="电脑连接未完成"
       :description="connectError"
     />
 
@@ -65,7 +68,11 @@
                 {{ host.display_name }}
               </h2>
               <BaseBadge :tone="statusTone(host.status)">
-                {{ statusLabel(host.status) }}
+                {{
+                  host.connected && host.status === CodexHostStatus.Offline
+                    ? '已连接，执行未就绪'
+                    : statusLabel(host.status)
+                }}
               </BaseBadge>
               <BaseBadge
                 v-if="host.compatibility.state !== 'unknown'"
@@ -87,6 +94,22 @@
           </div>
         </div>
         <div class="flex items-center justify-end gap-1">
+          <BaseButton
+            size="sm"
+            variant="secondary"
+            :loading="activatingHostId === host.host_id"
+            :disabled="
+              Boolean(activatingHostId) ||
+              host.status === CodexHostStatus.Revoked
+            "
+            @click="activateComputer(host)"
+          >
+            {{
+              host.status === CodexHostStatus.Online
+                ? '进入工作台'
+                : '使用这台电脑'
+            }}
+          </BaseButton>
           <BaseButton
             icon
             size="sm"
@@ -121,7 +144,7 @@
         <div class="flex items-center justify-between gap-4 px-4 py-3.5">
           <span class="flex items-center gap-3 text-sm">
             <Radio class="size-4 text-ink-muted" aria-hidden="true" />
-            实时连接
+            浏览器实时连接
           </span>
           <strong class="text-sm font-medium">{{ realtimeStatusLabel }}</strong>
         </div>
@@ -297,7 +320,7 @@ import {
   type CodexHost,
 } from '~/types/codex-host'
 import { CodexRealtimeConnectionStatus } from '~/types/codex-realtime'
-import { LOGIN_ROUTE } from '~/types/routes'
+import { LOGIN_ROUTE, buildCodexTasksRoute } from '~/types/routes'
 import {
   readCodexBrowserNotificationPermission,
   refreshCodexBrowserNotificationPermission,
@@ -340,6 +363,8 @@ const renameError = ref('')
 const dialogSubmitting = ref(false)
 const connecting = ref(false)
 const connectError = ref('')
+const activatingHostId = ref<string | null>(null)
+const sessionStore = useCodexSessionStore()
 const notificationPermission = ref<CodexBrowserNotificationPermission>(
   readCodexBrowserNotificationPermission(),
 )
@@ -347,9 +372,7 @@ const URI_HANDLER_NAVIGATION_DELAY_MS = 1_200
 let navigationTimer: ReturnType<typeof setTimeout> | null = null
 
 const activeHostCount = computed(
-  () =>
-    devicesStore.hosts.filter((host) => host.status === CodexHostStatus.Online)
-      .length,
+  () => devicesStore.hosts.filter((host) => host.connected).length,
 )
 
 const notificationPermissionLabel = computed(() => {
@@ -515,6 +538,26 @@ const revokeSelectedHost = async () => {
     revokeError.value = normalized.message || '撤销电脑失败。'
   } finally {
     dialogSubmitting.value = false
+  }
+}
+
+const activateComputer = async (host: CodexHost) => {
+  if (activatingHostId.value) return
+  activatingHostId.value = host.host_id
+  connectError.value = ''
+  try {
+    await sessionStore.selectHost(host.host_id)
+    await navigateTo(
+      buildCodexTasksRoute({
+        hostId: host.host_id,
+        workspaceId: sessionStore.selectedWorkspaceId ?? undefined,
+      }),
+    )
+  } catch (error) {
+    connectError.value =
+      (error as ApiErrorPayload).message || '启用电脑失败，请重试。'
+  } finally {
+    activatingHostId.value = null
   }
 }
 

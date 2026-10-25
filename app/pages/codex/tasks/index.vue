@@ -100,7 +100,9 @@ onMounted(async () => {
       hostId,
       workspaceId,
     })
-    if (!restored) {
+    // A valid host may still be publishing its first workspace snapshot.
+    // Only an explicitly requested missing identity is a route failure.
+    if (!restored && (workspaceId || !sessionStore.selectedHostId)) {
       throw new Error(sessionStore.selectionError ?? '项目权威归属恢复失败。')
     }
   } catch (error) {

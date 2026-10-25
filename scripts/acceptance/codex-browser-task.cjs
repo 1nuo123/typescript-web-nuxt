@@ -349,7 +349,76 @@ if (
     await page.getByLabel('用户名', { exact: true }).fill('admin')
     await page.getByLabel('密码', { exact: true }).fill('admin')
     await page.getByRole('button', { name: '登录', exact: true }).click()
-    await page.waitForURL('**/codex/tasks')
+    await page.waitForURL((url) => url.pathname === '/codex/tasks')
+    if (process.env.CODEX_ACCEPTANCE_ACTIVATION_ONLY === 'true') {
+      setStage('activate connected inactive host through settings')
+      await page.getByRole('link', { name: '设置', exact: true }).click()
+      const card = page.locator('article')
+      await expect(card).toHaveCount(1)
+      await expect(
+        card.getByText('已连接，执行未就绪', { exact: true }),
+      ).toBeVisible()
+      const activated = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' &&
+          new URL(response.url()).pathname.endsWith('/codex/active-host'),
+      )
+      await card
+        .getByRole('button', { name: '使用这台电脑', exact: true })
+        .click()
+      const response = await activated
+      if (!response.ok()) throw Error(`Activation HTTP ${response.status()}`)
+      await page.waitForURL(/\/codex\/tasks(?:\?|$)/, { timeout: 60000 })
+      await expect(
+        page.getByRole('button', { name: 'Acceptance', exact: true }),
+      ).toBeVisible({ timeout: 60000 })
+      await page
+        .getByRole('button', { name: 'Acceptance', exact: true })
+        .click()
+      await expect(
+        page.getByRole('heading', { name: 'Acceptance', exact: true }),
+      ).toBeVisible()
+      await expect(page.getByRole('alert')).toHaveCount(0)
+      await page.getByRole('link', { name: '设置', exact: true }).click()
+      await expect(
+        page
+          .locator('article')
+          .getByRole('button', { name: '进入工作台', exact: true }),
+      ).toBeVisible({ timeout: 60000 })
+      await card
+        .getByRole('button', { name: '重命名电脑', exact: true })
+        .click()
+      const rename = page.getByRole('dialog', {
+        name: '重命名电脑',
+        exact: true,
+      })
+      await rename
+        .getByLabel('电脑名称', { exact: true })
+        .fill('Acceptance connected host')
+      await rename.getByRole('button', { name: '保存', exact: true }).click()
+      await expect(rename).not.toBeVisible()
+      await expect(
+        card.getByText('Acceptance connected host', { exact: true }),
+      ).toBeVisible()
+      await expect(page.getByText(/1 台已连接/)).toBeVisible()
+      check(
+        'rename reloads authoritative live host projection without losing connection',
+        { host_id: hostId },
+      )
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.screenshot({
+        path: output.replace(/\.json$/, '.png'),
+        fullPage: true,
+      })
+      if (errors.length) throw Error(errors.join('\n'))
+      check(
+        'settings button activates single preselected host through real API and reaches workspace',
+        { host_id: hostId },
+      )
+      report.passed = true
+      report.stage = 'complete'
+      return
+    }
     setStage('select isolated host and workspace')
     const navigation = page.getByRole('complementary', {
       name: 'Codex 项目导航',

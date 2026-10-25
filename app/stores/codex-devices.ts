@@ -121,12 +121,11 @@ export const useCodexDevicesStore = defineStore('codex-devices', {
 
     async renameHost(host: CodexHost, displayName: string): Promise<void> {
       try {
-        const updated = await createCodexHostsClient().rename(
-          host.host_id,
-          host.version,
-          { display_name: displayName.trim() },
-        )
-        useCodexSessionStore().upsertHost(updated)
+        await createCodexHostsClient().rename(host.host_id, host.version, {
+          display_name: displayName.trim(),
+        })
+        // Mutation responses contain persisted metadata; read the authoritative live projection.
+        await useCodexSessionStore().loadHosts()
       } catch (error) {
         const normalized = error as ApiErrorPayload
         this.lastError = normalized

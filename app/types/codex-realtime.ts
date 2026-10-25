@@ -76,6 +76,7 @@ export interface CodexHostStatusDetail extends CodexRealtimeDetailBase {
   kind: CodexRealtimeEventType.HostStatusChanged
   host_id: string
   status: CodexHostStatus
+  connected: boolean
   last_seen_at?: string | null
 }
 

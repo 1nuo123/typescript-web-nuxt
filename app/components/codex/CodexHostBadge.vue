@@ -25,6 +25,8 @@ const props = withDefaults(
 )
 
 const statusLabel = computed(() => {
+  if (props.host.connected && props.host.status === CodexHostStatus.Offline)
+    return '已连接，执行未就绪'
   const labels: Record<string, string> = {
     [CodexHostStatus.Online]: '在线',
     [CodexHostStatus.Offline]: '离线',

@@ -78,6 +78,11 @@ interface CodexInFlightLoad {
 }
 
 let hostsLoadInFlight: Promise<void> | null = null
+let hostSelection: {
+  hostId: string
+  controller: AbortController
+  promise: Promise<void>
+} | null = null
 let workspacesLoadInFlight: CodexInFlightLoad | null = null
 let threadsLoadInFlight: CodexInFlightLoad | null = null
 let authorityRefreshInFlight: CodexInFlightLoad | null = null
@@ -371,12 +376,6 @@ export const useCodexSessionStore = defineStore('codex-session', {
       }
     },
 
-    /** Keep host mutations on the session projection so every page observes one entity source. */
-    upsertHost(host: CodexHost): void {
-      this.projection.hostsById[host.host_id] = host
-      this.reconcileSelections()
-    },
-
     prepareHostSelection(hostId: string): void {
       if (this.selectedHostId === hostId) return
       this.invalidateSnapshotRecovery()
@@ -391,25 +390,50 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     async selectHost(hostId: string): Promise<void> {
-      await createCodexHostsClient().activate(hostId)
-      await this.loadHosts()
-      this.prepareHostSelection(hostId)
-      const preservedWorkspaceId =
-        this.selectedHostId === hostId ? this.selectedWorkspaceId : null
-      this.selectedHostId = hostId
-      this.selectedWorkspaceId = preservedWorkspaceId
-      this.selectedThreadId = null
-      this.selectionError = null
-      this.workspaceSelectionState = WorkspaceSelectionState.Loading
-      await this.loadWorkspaces()
-      const workspaceId =
-        preservedWorkspaceId ??
-        this.workspaces.find((workspace) => workspace.enabled)?.workspace_id ??
-        null
-      if (workspaceId) {
-        this.restoreWorkspace(workspaceId)
-        await this.loadThreads(workspaceId)
-      } else this.workspaceSelectionState = WorkspaceSelectionState.Missing
+      if (hostSelection?.hostId === hostId) return hostSelection.promise
+      hostSelection?.controller.abort()
+      const controller = new AbortController()
+      const signal = controller.signal
+      const request = (async () => {
+        try {
+          await createCodexHostsClient().activate(hostId, signal)
+          signal.throwIfAborted()
+          await this.loadHosts()
+          signal.throwIfAborted()
+          const preservedWorkspaceId =
+            this.selectedHostId === hostId ? this.selectedWorkspaceId : null
+          this.prepareHostSelection(hostId)
+          this.selectedHostId = hostId
+          this.selectedWorkspaceId = preservedWorkspaceId
+          this.selectedThreadId = null
+          this.selectionError = null
+          this.workspaceSelectionState = WorkspaceSelectionState.Loading
+          await this.loadWorkspaces()
+          signal.throwIfAborted()
+          const workspaceId =
+            preservedWorkspaceId ??
+            this.workspaces.find((workspace) => workspace.enabled)
+              ?.workspace_id ??
+            null
+          if (workspaceId) {
+            this.restoreWorkspace(workspaceId)
+            await this.loadThreads(workspaceId)
+            signal.throwIfAborted()
+          } else this.workspaceSelectionState = WorkspaceSelectionState.Missing
+        } catch (error) {
+          if (!signal.aborted) {
+            this.selectionError =
+              (error as ApiErrorPayload).message || '电脑切换失败，请重试。'
+          }
+          throw error
+        }
+      })()
+      hostSelection = { hostId, controller, promise: request }
+      try {
+        await request
+      } finally {
+        if (hostSelection?.controller === controller) hostSelection = null
+      }
     },
 
     async loadWorkspaces(): Promise<void> {
@@ -1512,6 +1536,8 @@ export const useCodexSessionStore = defineStore('codex-session', {
     },
 
     clearSession(): void {
+      hostSelection?.controller.abort()
+      hostSelection = null
       sessionLoadGeneration += 1
       hostsLoadInFlight = null
       workspacesLoadInFlight = null
