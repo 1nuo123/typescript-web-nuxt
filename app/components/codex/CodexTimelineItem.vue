@@ -11,6 +11,7 @@
       v-if="
         item.detail.kind !== CodexTimelineItemKind.UserMessage &&
         item.detail.kind !== CodexTimelineItemKind.AgentMessage &&
+        item.detail.kind !== CodexTimelineItemKind.Notice &&
         item.detail.kind !== CodexTimelineItemKind.Command &&
         item.detail.kind !== CodexTimelineItemKind.Plan
       "
@@ -62,7 +63,10 @@
         class="codex-markdown break-words text-[0.9375rem] leading-7 text-ink"
       >
         <CodexMarkdown
-          :copyable="item.detail.kind === CodexTimelineItemKind.AgentMessage"
+          :copyable="
+            item.detail.kind === CodexTimelineItemKind.AgentMessage &&
+            !item.detail.content
+          "
           :source="item.detail.text"
           :streaming="item.header.status === CodexTimelineItemStatus.Streaming"
         />
@@ -77,7 +81,7 @@
       </div>
       <div
         v-else-if="item.detail.kind === CodexTimelineItemKind.Notice"
-        class="rounded-md border-l-2 border-line-strong bg-surface-muted px-3 py-2 text-sm text-ink-muted"
+        class="codex-markdown break-words text-[0.9375rem] leading-7 text-ink-muted"
       >
         <CodexMarkdown
           :source="item.detail.text"
@@ -120,6 +124,12 @@
         <span class="min-w-0 flex-1 truncate">{{ contextSummary }}</span>
         <ChevronRight class="size-3.5 shrink-0 text-ink-muted" />
       </button>
+      <CodexContentBody
+        v-if="item.detail.kind !== 'evicted' && item.detail.content"
+        :descriptor="item.detail.content"
+        :thread-id="item.header.thread_id"
+        :item-id="item.header.item_id"
+      />
     </div>
   </article>
 </template>

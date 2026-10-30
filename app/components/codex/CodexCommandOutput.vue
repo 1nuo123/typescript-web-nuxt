@@ -72,7 +72,7 @@
             :disabled="!item.detail.output"
             @click="copyText(item.detail.output)"
           >
-            复制输出
+            {{ item.detail.content ? '复制预览' : '复制输出' }}
           </button>
         </footer>
       </div>

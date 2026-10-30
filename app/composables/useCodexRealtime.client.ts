@@ -128,6 +128,7 @@ export const resolveCodexWebSocketUrl = ({
     target.protocol === 'https:' || target.protocol === 'wss:' ? 'wss:' : 'ws:'
   const resolved = new URL(realtimePath, target)
   resolved.searchParams.set('ticket', ticket)
+  resolved.searchParams.set('content_mode', 'bounded')
   if (cursor) resolved.searchParams.set('cursor', cursor)
   if (streamEpoch) resolved.searchParams.set('stream_epoch', streamEpoch)
   if (batchVersion === 2) resolved.searchParams.set('batch_version', '2')
@@ -590,6 +591,12 @@ export const useCodexRealtime = () => {
         attemptTimer = null
         if (idleTimer) clearTimeout(idleTimer)
         idleTimer = null
+        if (event.code === 1009) {
+          realtimeStore.markError(
+            '实时消息超过通道容量，请刷新后重试或检查服务端容量配置。',
+          )
+          return
+        }
         if (protocolCompatible) {
           scheduleReconnect(
             generation,

@@ -1,3 +1,4 @@
+import { normalizeCodexTimelineItem } from './codex-contract-normalizer'
 import {
   CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
   CodexTimelineItemKind,
@@ -542,18 +543,26 @@ export const evictCodexTimelineBodies = (
   state: CodexSessionProjection,
   threadId: string,
   protectedItemIds: ReadonlySet<string>,
+  contentBytes = 0,
 ): CodexSessionProjection => {
   const orderedItemIds = state.orderedItemIdsByThread[threadId] ?? []
   let retainedBytes = orderedItemIds.reduce((total, itemId) => {
     const item = state.itemsById[codexItemKey(state, threadId, itemId)]
     return total + (item ? readTimelineBodyBytes(item) : 0)
   }, 0)
-  if (retainedBytes <= CODEX_TIMELINE_BODY_EVICTION_HIGH_WATER_BYTES)
+  if (
+    retainedBytes + contentBytes <=
+    CODEX_TIMELINE_BODY_EVICTION_HIGH_WATER_BYTES
+  )
     return state
   const itemsById = { ...state.itemsById }
   let changed = false
   for (const itemId of orderedItemIds) {
-    if (retainedBytes <= CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES) break
+    if (
+      retainedBytes + contentBytes <=
+      CODEX_TIMELINE_BODY_EVICTION_TARGET_BYTES
+    )
+      break
     const item = itemsById[codexItemKey(state, threadId, itemId)]
     if (
       !item ||
@@ -600,12 +609,20 @@ export const restoreCodexTimelineBodies = (
   state: CodexSessionProjection,
   items: readonly CodexTimelineItem[],
 ): CodexSessionProjection => {
-  const restored = items.filter(
-    (item) =>
-      state.itemsById[
-        codexItemKey(state, item.header.thread_id, item.header.item_id)
-      ]?.detail.kind === 'evicted',
-  )
+  const restored = items
+    .map((item) => normalizeCodexTimelineItem(item))
+    .filter((item) => {
+      const current =
+        state.itemsById[
+          codexItemKey(state, item.header.thread_id, item.header.item_id)
+        ]
+      return (
+        current &&
+        (current.detail.kind === 'evicted' ||
+          (current.header.status !== CodexTimelineItemStatus.Streaming &&
+            Boolean(current.detail.content)))
+      )
+    })
   if (!restored.length) return state
   const itemsById = {
     ...state.itemsById,
@@ -649,6 +666,13 @@ export const prependCodexHistoryPage = (
   threadId: string,
   page: CodexThreadHistoryPage,
 ): CodexSessionProjection => {
+  page = {
+    ...page,
+    items: page.items.map((item) => normalizeCodexTimelineItem(item)),
+  }
+  const revision = state.historyRevisionByThread[threadId]
+  if (revision && revision !== page.history_revision)
+    throw new Error('历史版本已变化，请重新加载会话。')
   const existingIds = state.orderedItemIdsByThread[threadId] ?? []
   const existingIdSet = new Set(existingIds)
   const pageIds = page.items

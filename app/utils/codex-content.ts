@@ -7,10 +7,15 @@ export const CODEX_CONTENT_TRUNCATED_NOTICE =
 
 export const truncateCodexContent = (value: string, limit: number): string => {
   if (value.length <= limit) return value
-  const retainedLength = Math.max(
+  let retainedLength = Math.max(
     0,
     limit - CODEX_CONTENT_TRUNCATED_NOTICE.length,
   )
+  if (
+    retainedLength > 0 &&
+    /[\uD800-\uDBFF]/.test(value[retainedLength - 1] ?? '')
+  )
+    retainedLength -= 1
   return `${value.slice(0, retainedLength)}${CODEX_CONTENT_TRUNCATED_NOTICE}`
 }
 

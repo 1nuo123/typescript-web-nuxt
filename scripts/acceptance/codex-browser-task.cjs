@@ -174,8 +174,10 @@ if (
   })
   const composer = page.getByLabel('发送给 Codex', { exact: true })
   const threadResponse = (response) => {
-    const pathname = new URL(response.url()).pathname
+    const url = new URL(response.url())
+    const pathname = url.pathname
     return (
+      url.searchParams.get("include_history") === "true" &&
       response.request().method() === 'GET' &&
       pathname.endsWith(`/codex/hosts/${hostId}/threads/${report.thread_id}`)
     )
@@ -314,6 +316,9 @@ if (
   const assertHistory = async (snapshot, expectedTurns) => {
     if (snapshot?.thread?.upstream_thread_id !== report.thread_id)
       throw Error('HTTP history returned a different thread.')
+    report.history_turns = snapshot.turns.map(({ turn_id, status }) => ({ turn_id, status }))
+    report.history_item_count = snapshot.items.length
+    report.history_has_more = snapshot.history_has_more
     const ids = snapshot.turns.map((turn) => turn.turn_id)
     if (new Set(ids).size !== ids.length)
       throw Error('HTTP history has duplicate turns.')
@@ -322,7 +327,7 @@ if (
         (turn) => turn.turn_id === expected.turn_id,
       )
       if (!actual || actual.status !== expected.status)
-        throw Error(`HTTP history disagrees for ${expected.name}.`)
+        throw Error(`HTTP history disagrees for ${expected.name}: expected ${expected.status}, got ${actual?.status || "missing"}.`)
     }
     const itemIds = snapshot.items.map((item) => item.header.item_id)
     if (new Set(itemIds).size !== itemIds.length)
@@ -449,7 +454,7 @@ if (
     setStage('send and real streaming delta')
     const streamed = await submit(
       'streaming',
-      'This is a UI streaming acceptance. Do not use tools or access files/network. Reply with BROWSER_STREAM_OK followed by sixty numbered short sentences describing a quiet garden. Finish with BROWSER_STREAM_END.',
+      'This is a UI streaming acceptance. Do not use tools or access files/network. First send a short commentary update containing BROWSER_STREAM_OK. Then in your final answer write sixty numbered short sentences describing a quiet garden. Finish with BROWSER_STREAM_END.',
     )
     await expect
       .poll(() => streamed.visible_streaming_samples || 0, { timeout: 150000 })
@@ -460,12 +465,37 @@ if (
       streamed.first_delta_sequence >= streamed.terminal_sequence
     )
       throw Error('No real nonempty item.delta before terminal event.')
-    await expect(
-      page
-        .locator('.codex-conversation article')
-        .filter({ has: page.getByText('Codex', { exact: true }) })
-        .filter({ hasText: 'BROWSER_STREAM_END' }),
-    ).toBeVisible()
+    // Completed replies now expose a preview plus the same bounded content reader.
+    const replyRows = page
+      .locator('.codex-conversation article')
+      .filter({ has: page.getByText('Codex', { exact: true }) })
+    const completeReply = replyRows.filter({ hasText: 'BROWSER_STREAM_END' })
+    if (!(await completeReply.count())) {
+      const reloadBody = replyRows
+        .getByRole('button', { name: '重新加载正文', exact: true })
+        .last()
+      if (await reloadBody.count()) await reloadBody.click()
+      const expandBody = replyRows
+        .getByRole('button', { name: '展开正文', exact: true })
+        .last()
+      await expect(expandBody).toBeVisible({ timeout: 30000 })
+      await expandBody.click()
+      for (
+        let index = 0;
+        index < 20 && !(await completeReply.count());
+        index++
+      ) {
+        await expect(
+          replyRows.getByRole('button', { name: '正在读取…', exact: true }),
+        ).toHaveCount(0)
+        const more = replyRows
+          .getByRole('button', { name: '继续读取', exact: true })
+          .last()
+        if (!(await more.count())) break
+        await more.click()
+      }
+    }
+    await expect(completeReply).toBeVisible()
     check('UI submission accepted with operation and real turn IDs', {
       turn_id: streamed.turn_id,
       operation_id: streamed.operation_id,

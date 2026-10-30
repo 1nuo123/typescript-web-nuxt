@@ -1,3 +1,4 @@
+import { parseCodexContentDescriptor } from './codex-content-contract'
 import {
   CodexApprovalDecision,
   CodexApprovalKind,
@@ -391,6 +392,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         text: requireText(detail.text, `${path}.detail.text`),
       },
     }
@@ -401,6 +405,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         label: requireString(detail.label, `${path}.detail.label`),
         text: requireText(detail.text, `${path}.detail.text`),
       },
@@ -417,6 +424,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         label: detail.label,
       },
     }
@@ -427,6 +437,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         explanation:
           typeof detail.explanation === 'string' ? detail.explanation : '',
         steps: normalizePlanSteps(detail.steps, `${path}.detail.steps`),
@@ -439,6 +452,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         command: typeof detail.command === 'string' ? detail.command : '',
         output: typeof detail.output === 'string' ? detail.output : '',
         exit_code: readNullableNumber(detail.exit_code),
@@ -451,6 +467,9 @@ export const normalizeCodexTimelineItem = (
       detail: {
         kind,
         schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+        ...(detail.content == null
+          ? {}
+          : { content: parseCodexContentDescriptor(detail.content) }),
         approval_id: requireString(
           detail.approval_id,
           `${path}.detail.approval_id`,
@@ -474,6 +493,9 @@ export const normalizeCodexTimelineItem = (
     detail: {
       kind: CodexTimelineItemKind.Diff,
       schema_version: CODEX_TIMELINE_ITEM_SCHEMA_VERSION,
+      ...(detail.content == null
+        ? {}
+        : { content: parseCodexContentDescriptor(detail.content) }),
       diff: normalizeCodexDiff(detail.diff, `${path}.detail.diff`),
     },
   }

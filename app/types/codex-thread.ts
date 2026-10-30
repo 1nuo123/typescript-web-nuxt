@@ -84,6 +84,7 @@ export interface CodexThreadCreateRequest {
 }
 
 export interface CodexThreadAuthoritySnapshot {
+  schema_version?: 'bounded-content.1'
   source_epoch?: string | null
   source_seq?: number
   covered_item_ids?: string[]
@@ -98,6 +99,7 @@ export interface CodexThreadAuthoritySnapshot {
 
 /** 按服务端签名边界向前读取的一页历史，不包含线程控制面元数据。 */
 export interface CodexThreadHistoryPage {
+  schema_version?: 'bounded-content.1'
   items: CodexTimelineItem[]
   before_cursor: string | null
   has_more: boolean
@@ -106,6 +108,7 @@ export interface CodexThreadHistoryPage {
 
 /** 仅按稳定 item ID 恢复当前标签页已回收正文的权威响应。 */
 export interface CodexThreadHistoryItemReload {
+  schema_version?: 'bounded-content.1'
   items: CodexTimelineItem[]
   missing_item_ids: string[]
 }

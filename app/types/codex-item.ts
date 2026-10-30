@@ -1,3 +1,4 @@
+import type { CodexContentDescriptor } from './codex-content'
 export const CODEX_TIMELINE_ITEM_SCHEMA_VERSION = '1.0'
 
 export enum CodexTimelineItemKind {
@@ -36,6 +37,7 @@ export interface CodexTimelineItemHeader {
 }
 
 interface CodexTimelineDetailBase {
+  content?: CodexContentDescriptor
   schema_version: typeof CODEX_TIMELINE_ITEM_SCHEMA_VERSION
 }
 

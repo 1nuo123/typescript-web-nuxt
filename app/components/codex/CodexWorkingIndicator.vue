@@ -1,19 +1,20 @@
 <template>
-  <div
-    class="codex-reading-column flex w-full min-w-0 items-center gap-2 border-t border-line px-1 py-3 text-xs text-ink-muted"
+  <article
+    class="codex-message flex w-full min-w-0 max-w-full gap-3 overflow-hidden px-1 py-3"
     role="status"
     aria-live="polite"
     :aria-label="`Codex ${label}`"
   >
-    <LoaderCircle
-      class="size-3.5 shrink-0 animate-spin text-accent"
-      aria-hidden="true"
-    />
-    <span class="min-w-0 break-words">{{ label }}</span>
-  </div>
+    <div class="min-w-0 max-w-full overflow-hidden">
+      <div
+        class="codex-markdown break-words text-[0.9375rem] leading-7 text-ink-muted"
+      >
+        <CodexMarkdown :source="label" :streaming="true" />
+      </div>
+    </div>
+  </article>
 </template>
 
 <script setup lang="ts">
-import { LoaderCircle } from '@lucide/vue'
 withDefaults(defineProps<{ label?: string }>(), { label: '正在处理' })
 </script>

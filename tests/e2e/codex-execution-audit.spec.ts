@@ -896,6 +896,21 @@ test.describe('Codex execution audit browser flow', () => {
       item: processCommand('streaming', '', null),
     })
     await page.setViewportSize({ width: 1440, height: 1000 })
+    const workingStatus = page.getByRole('status', {
+      name: 'Codex 变更已应用，仍在执行',
+      exact: true,
+    })
+    await expect(workingStatus).toBeVisible()
+    await expect(workingStatus).toHaveClass(/codex-message/)
+    await expect(workingStatus.locator('.codex-markdown')).toHaveCSS(
+      'font-size',
+      '15px',
+    )
+    await expect(workingStatus.locator('.codex-markdown')).toHaveCSS(
+      'line-height',
+      '28px',
+    )
+    await expect(workingStatus.locator('.animate-spin')).toHaveCount(0)
     const process = page.locator(
       '.codex-conversation [data-command-id="process-command"]',
     )

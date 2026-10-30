@@ -66,6 +66,12 @@
               {{ item.detail.diff.files.length }} 个文件
             </option>
           </select>
+          <CodexContentBody
+            v-if="selectedDiff?.detail.content"
+            :descriptor="selectedDiff.detail.content"
+            :thread-id="selectedDiff.header.thread_id"
+            :item-id="selectedDiff.header.item_id"
+          />
           <section
             v-if="selectedDiffFile"
             class="grid min-w-0 gap-3"
@@ -151,6 +157,12 @@
             </option>
           </select>
           <CodexCommandOutput v-if="selectedCommand" :item="selectedCommand" />
+          <CodexContentBody
+            v-if="selectedCommand?.detail.content"
+            :descriptor="selectedCommand.detail.content"
+            :thread-id="selectedCommand.header.thread_id"
+            :item-id="selectedCommand.header.item_id"
+          />
         </div>
       </template>
 

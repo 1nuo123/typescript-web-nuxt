@@ -1,3 +1,5 @@
+import type { CodexContentReadRequest } from '~/types/codex-content'
+import { parseCodexContentChunk } from '~/utils/codex-content-contract'
 import type { CodexExecutionOptions } from '~/types/codex-thread'
 import type {
   CodexConversationListQuery,
@@ -78,6 +80,7 @@ export const createCodexThreadsClient = () => {
           retry: 0,
           signal,
           query: {
+            content_mode: 'bounded',
             include_history: includeHistory,
             history_limit: historyLimit,
           },
@@ -88,13 +91,16 @@ export const createCodexThreadsClient = () => {
       threadId: string,
       beforeCursor: string,
       historyLimit = CODEX_DEFAULT_HISTORY_LIMIT,
+      signal?: AbortSignal,
     ) =>
       client.get<CodexThreadHistoryPage>(
         buildCodexThreadHistoryPath(hostId, threadId),
         {
           timeout: 35_000,
           retry: 0,
+          signal,
           query: {
+            content_mode: 'bounded',
             before_cursor: beforeCursor,
             limit: historyLimit,
           },
@@ -104,10 +110,30 @@ export const createCodexThreadsClient = () => {
       hostId: string,
       threadId: string,
       itemIds: readonly string[],
+      signal?: AbortSignal,
     ) =>
       client.get<CodexThreadHistoryItemReload>(
         buildCodexThreadHistoryItemsPath(hostId, threadId),
-        { timeout: 35_000, retry: 0, query: { item_id: [...itemIds] } },
+        {
+          timeout: 35_000,
+          retry: 0,
+          signal,
+          query: { content_mode: 'bounded', item_id: [...itemIds] },
+        },
+      ),
+    readContent: async (
+      hostId: string,
+      threadId: string,
+      itemId: string,
+      body: CodexContentReadRequest,
+      signal?: AbortSignal,
+    ) =>
+      parseCodexContentChunk(
+        await client.post<unknown>(
+          `${buildCodexThreadHistoryItemsPath(hostId, threadId)}/${encodeURIComponent(itemId)}/content/read`,
+          body,
+          { signal, timeout: 35_000, retry: 0 },
+        ),
       ),
     create: (
       hostId: string,

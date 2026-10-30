@@ -1,3 +1,4 @@
+import { useCodexContentStore } from './codex-content'
 import { defineStore } from 'pinia'
 import type { ApiErrorPayload } from '~/types/api'
 import {
@@ -146,6 +147,8 @@ const buildSnapshotRecoveryKey = (
   hostId: string,
   threadId: string,
 ): string => JSON.stringify([generation, hostId, threadId])
+
+const historyReadControllers = new Set<AbortController>()
 
 const DEFAULT_CODEX_EXECUTION_OPTIONS: CodexExecutionOptions = {
   model: null,
@@ -329,6 +332,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
   },
   actions: {
     invalidateSnapshotRecovery(): void {
+      useCodexContentStore().clear()
+      for (const controller of historyReadControllers) controller.abort()
+      historyReadControllers.clear()
       this.snapshotRecoveryGeneration += 1
       this.snapshotRecoveryInFlight = false
       this.snapshotRecoveryKey = null
@@ -1004,9 +1010,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
               detail_kind: CodexRealtimeEventType.ThreadSnapshot,
             },
             detail: {
+              ...snapshot,
               kind: CodexRealtimeEventType.ThreadSnapshot,
               schema_version: CODEX_REALTIME_SCHEMA_VERSION,
-              ...snapshot,
             },
           })
           this.snapshotRecoveryInFlight = false
@@ -1073,11 +1079,15 @@ export const useCodexSessionStore = defineStore('codex-session', {
       if (historyLoadInFlight?.key === requestKey)
         return historyLoadInFlight.promise
 
+      const controller = new AbortController()
+      historyReadControllers.add(controller)
       const request = (async (): Promise<void> => {
         const page = await createCodexThreadsClient().readHistory(
           hostId,
           threadId,
           beforeCursor,
+          50,
+          controller.signal,
         )
         // 选择或 session 在请求期间变化时，旧页不能覆盖新窗口的 cursor。
         if (
@@ -1098,6 +1108,7 @@ export const useCodexSessionStore = defineStore('codex-session', {
       try {
         await request
       } finally {
+        historyReadControllers.delete(controller)
         if (historyLoadInFlight?.promise === request) historyLoadInFlight = null
       }
     },
@@ -1108,20 +1119,41 @@ export const useCodexSessionStore = defineStore('codex-session', {
         this.projection,
         this.selectedThreadId,
         new Set(protectedItemIds),
+        useCodexContentStore().totalBytes,
       )
     },
 
     async reloadTimelineBody(itemId: string): Promise<void> {
-      if (!this.selectedHostId || !this.selectedThreadId) return
-      const reloaded = await createCodexThreadsClient().readHistoryItems(
-        this.selectedHostId,
-        this.selectedThreadId,
-        [itemId],
-      )
-      this.projection = restoreCodexTimelineBodies(
-        this.projection,
-        reloaded.items,
-      )
+      const hostId = this.selectedHostId
+      const threadId = this.selectedThreadId
+      if (!hostId || !threadId) return
+      const itemKey = codexItemKey(this.projection, threadId, itemId)
+      const originalItem = this.projection.itemsById[itemKey]
+      const generation = sessionLoadGeneration
+      const controller = new AbortController()
+      historyReadControllers.add(controller)
+      try {
+        const reloaded = await createCodexThreadsClient().readHistoryItems(
+          hostId,
+          threadId,
+          [itemId],
+          controller.signal,
+        )
+        if (
+          this.projection.itemsById[itemKey] !== originalItem ||
+          controller.signal.aborted ||
+          generation !== sessionLoadGeneration ||
+          this.selectedHostId !== hostId ||
+          this.selectedThreadId !== threadId
+        )
+          return
+        this.projection = restoreCodexTimelineBodies(
+          this.projection,
+          reloaded.items,
+        )
+      } finally {
+        historyReadControllers.delete(controller)
+      }
     },
 
     async ensureThreadReady(): Promise<void> {
@@ -1538,6 +1570,9 @@ export const useCodexSessionStore = defineStore('codex-session', {
     clearSession(): void {
       hostSelection?.controller.abort()
       hostSelection = null
+      useCodexContentStore().clear()
+      for (const controller of historyReadControllers) controller.abort()
+      historyReadControllers.clear()
       sessionLoadGeneration += 1
       hostsLoadInFlight = null
       workspacesLoadInFlight = null
